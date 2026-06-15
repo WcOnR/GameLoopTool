@@ -12,30 +12,54 @@ function effectLabel(effect, state) {
   return `[${obj.name}:${attr.name}] ${effect.delta}`
 }
 
+// Find a position with at least 150px clearance from all existing positions
+function findEmptySpot(existing) {
+  const clearance = 150
+  if (existing.length === 0) return { x: 200, y: 200 }
+
+  const cx = existing.reduce((s, p) => s + p.x, 0) / existing.length
+  const cy = existing.reduce((s, p) => s + p.y, 0) / existing.length
+
+  for (let r = clearance; r < 3000; r += clearance) {
+    const steps = Math.max(8, Math.floor((2 * Math.PI * r) / clearance))
+    for (let i = 0; i < steps; i++) {
+      const angle = (2 * Math.PI * i) / steps
+      const x = cx + r * Math.cos(angle)
+      const y = cy + r * Math.sin(angle)
+      const clear = existing.every(
+        p => Math.hypot(p.x - x, p.y - y) >= clearance
+      )
+      if (clear) return { x, y }
+    }
+  }
+  return { x: cx + clearance * 2, y: cy }
+}
+
 function buildElements(state) {
   const nodes = []
   const edges = []
 
-  // Object nodes
   for (const obj of state.objects) {
     const attrLines = obj.attrs.map(a => `${a.name}: ${a.value}`).join('\n')
-    nodes.push({
+    const el = {
       data: {
         id: obj.id,
         label: obj.name + (attrLines ? '\n' + attrLines : ''),
         kind: 'object',
         entityId: obj.id,
       },
-    })
+    }
+    if (obj.x !== undefined && obj.y !== undefined) el.position = { x: obj.x, y: obj.y }
+    nodes.push(el)
   }
 
-  // Action nodes + Object→Action + Action→Event edges
   for (const action of state.actions) {
-    nodes.push({
+    const el = {
       data: { id: action.id, label: action.name, kind: 'action', entityId: action.id },
-    })
+    }
+    if (action.x !== undefined && action.y !== undefined) el.position = { x: action.x, y: action.y }
+    nodes.push(el)
 
-    // Object → Action
     edges.push({
       data: {
         id: `oa-${action.id}`,
@@ -45,7 +69,6 @@ function buildElements(state) {
       },
     })
 
-    // Action → Event
     for (const edge of action.edges) {
       if (!edge.toEventId) continue
       edges.push({
@@ -59,15 +82,15 @@ function buildElements(state) {
     }
   }
 
-  // Event nodes + Event→Object edges
   for (const evt of state.events) {
-    nodes.push({
+    const el = {
       data: { id: evt.id, label: evt.name, kind: 'event', entityId: evt.id },
-    })
+    }
+    if (evt.x !== undefined && evt.y !== undefined) el.position = { x: evt.x, y: evt.y }
+    nodes.push(el)
 
     for (const edge of evt.edges) {
       if (!edge.toAttrId) continue
-      // Find the object that owns this attr
       let targetObjId = null
       let attrName = ''
       for (const obj of state.objects) {
@@ -75,7 +98,7 @@ function buildElements(state) {
         if (attr) { targetObjId = obj.id; attrName = attr.name; break }
       }
       if (!targetObjId) continue
-      const eLabel = `→ ${attrName}${edge.effect ? ' ' + effectLabel(edge.effect, state) : ''}`
+      const eLabel = `${attrName}${edge.effect ? ' ' + effectLabel(edge.effect, state) : ''}`
       edges.push({
         data: { id: `eo-${edge.id}`, source: evt.id, target: targetObjId, label: eLabel },
       })
@@ -83,7 +106,7 @@ function buildElements(state) {
   }
 
   const nodeIds = new Set(nodes.map(n => n.data.id))
-  return [...nodes, ...edges.filter(e => nodeIds.has(e.data.source) && nodeIds.has(e.data.target))]
+  return { nodes, edges: edges.filter(e => nodeIds.has(e.data.source) && nodeIds.has(e.data.target)) }
 }
 
 const STYLE = [
@@ -152,17 +175,21 @@ const STYLE = [
       label: 'data(label)',
       'font-size': 9,
       color: '#8ab',
-      'text-background-color': '#0f0f23',
+      'text-background-color': '#0a0a18',
       'text-background-opacity': 0.85,
       'text-background-padding': '2px',
     },
   },
 ]
 
-export default function GraphView({ state, selectedId, onSelectEntity }) {
+export default function GraphView({ state, selectedId, onSelectEntity, onPositionChange }) {
   const containerRef = useRef(null)
   const cyRef = useRef(null)
+  // Ref so dragfree handler always has latest callback without re-binding
+  const onPositionChangeRef = useRef(onPositionChange)
+  useEffect(() => { onPositionChangeRef.current = onPositionChange }, [onPositionChange])
 
+  // Mount Cytoscape once
   useEffect(() => {
     if (!containerRef.current) return
     const cy = cytoscape({
@@ -173,27 +200,63 @@ export default function GraphView({ state, selectedId, onSelectEntity }) {
       userZoomingEnabled: true,
       userPanningEnabled: true,
       boxSelectionEnabled: false,
-      autoungrabify: true,
     })
+
     cy.on('tap', 'node', evt => {
       const entityId = evt.target.data('entityId')
       if (entityId) onSelectEntity(entityId)
     })
+
+    cy.on('dragfree', 'node', evt => {
+      const node = evt.target
+      const { x, y } = node.position()
+      const id = node.id()
+      const kind = node.data('kind')
+      onPositionChangeRef.current(id, kind, x, y)
+    })
+
     cyRef.current = cy
     return () => { cy.destroy(); cyRef.current = null }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Rebuild graph when state changes
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
-    const els = buildElements(state)
+
+    const { nodes, edges } = buildElements(state)
+
     cy.elements().remove()
-    if (els.length > 0) {
-      cy.add(els)
-      cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 50, rankSep: 80, animate: false }).run()
+    if (nodes.length === 0) return
+
+    const unpositioned = nodes.filter(n => !n.position)
+    const existingPositions = nodes.filter(n => n.position).map(n => ({ ...n.position }))
+
+    // Assign positions to nodes that don't have one
+    for (const node of unpositioned) {
+      const pos = findEmptySpot(existingPositions)
+      node.position = pos
+      existingPositions.push({ ...pos })
+    }
+
+    cy.add([...nodes, ...edges])
+    cy.layout({ name: 'preset', animate: false }).run()
+
+    // Save positions for newly placed nodes
+    if (unpositioned.length > 0) {
+      for (const node of unpositioned) {
+        onPositionChangeRef.current(node.data.id, node.data.kind, node.position.x, node.position.y)
+      }
+      // Pan to the new nodes
+      const newIds = new Set(unpositioned.map(n => n.data.id))
+      const newCyNodes = cy.nodes().filter(n => newIds.has(n.id()))
+      if (newCyNodes.length > 0) {
+        cy.animate({ center: { eles: newCyNodes }, duration: 300 })
+      }
     }
   }, [state])
 
+  // Update highlight when selectedId changes
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return

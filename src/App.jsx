@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { loadState, saveState } from './store'
+import { loadState, saveState, updateObject, updateAction, updateEvent } from './store'
 import Sidebar from './Sidebar'
 import GraphView from './GraphView'
 
@@ -15,6 +15,12 @@ export default function App() {
       return next
     })
   }, [])
+
+  const handlePositionChange = useCallback((id, kind, x, y) => {
+    if (kind === 'object') mutate(updateObject, id, { x, y })
+    else if (kind === 'action') mutate(updateAction, id, { x, y })
+    else if (kind === 'event') mutate(updateEvent, id, { x, y })
+  }, [mutate])
 
   const handleGraphSelect = useCallback(id => {
     setSelectedId(id)
@@ -64,7 +70,12 @@ export default function App() {
         onSelect={setSelectedId}
         onClearSelect={() => setSelectedId(null)}
       />
-      <GraphView state={state} selectedId={selectedId} onSelectEntity={handleGraphSelect} />
+      <GraphView
+        state={state}
+        selectedId={selectedId}
+        onSelectEntity={handleGraphSelect}
+        onPositionChange={handlePositionChange}
+      />
     </div>
   )
 }

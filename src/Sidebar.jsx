@@ -103,7 +103,7 @@ function EventEdgeRow({ edge, state, eventId, mutate }) {
           return o && a ? ` [${o.name}:${a.name}] ${edge.effect.delta}` : ''
         })()
       : ''
-    return `→ ${attrLabel}${eff}`
+    return `${attrLabel}${eff}`
   })()
 
   return (
