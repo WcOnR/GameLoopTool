@@ -10,6 +10,7 @@ export default function App() {
   const [fitCounter, setFitCounter] = useState(0)
   const panToRef = useRef({ id: null, seq: 0 })
   const [panTo, setPanTo] = useState({ id: null, seq: 0 })
+  const graphIsolationRef = useRef(null)
 
   const mutate = useCallback((fn, ...args) => {
     setState(prev => {
@@ -84,6 +85,8 @@ export default function App() {
         onSelect={handleSidebarSelect}
         onClearSelect={() => setSelectedId(null)}
         onImport={handleImport}
+        onIsolate={nodeIds => graphIsolationRef.current?.applyIsolation(nodeIds)}
+        onClearIsolation={() => graphIsolationRef.current?.clearIsolation()}
       />
       <GraphView
         state={state}
@@ -92,6 +95,7 @@ export default function App() {
         onPositionChange={handlePositionChange}
         fitCounter={fitCounter}
         panTo={panTo}
+        isolationRef={graphIsolationRef}
       />
     </div>
   )

@@ -163,11 +163,42 @@ const STYLE = [
   },
 ]
 
-export default function GraphView({ state, selectedId, onSelectEntity, onPositionChange, fitCounter, panTo }) {
+export default function GraphView({ state, selectedId, onSelectEntity, onPositionChange, fitCounter, panTo, isolationRef }) {
   const containerRef = useRef(null)
   const cyRef = useRef(null)
   const onPositionChangeRef = useRef(onPositionChange)
+  const isolatedNodeIdsRef = useRef(null)
   useEffect(() => { onPositionChangeRef.current = onPositionChange }, [onPositionChange])
+
+  const reapplyIsolation = (cy) => {
+    const nodeIds = isolatedNodeIdsRef.current
+    if (!nodeIds) return
+    cy.elements().style({ opacity: 0.15 })
+    cy.elements().filter(el => nodeIds.includes(el.id())).style({ opacity: 1 })
+    cy.edges().filter(edge =>
+      nodeIds.includes(edge.source().id()) && nodeIds.includes(edge.target().id())
+    ).style({ opacity: 1 })
+    cy.nodes().filter(n => !nodeIds.includes(n.id())).ungrabify()
+  }
+
+  useEffect(() => {
+    if (!isolationRef) return
+    isolationRef.current = {
+      applyIsolation(nodeIds) {
+        const cy = cyRef.current
+        if (!cy) return
+        isolatedNodeIdsRef.current = nodeIds
+        reapplyIsolation(cy)
+      },
+      clearIsolation() {
+        const cy = cyRef.current
+        if (!cy) return
+        isolatedNodeIdsRef.current = null
+        cy.elements().style({ opacity: 1 })
+        cy.nodes().grabify()
+      },
+    }
+  }, [isolationRef]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -183,6 +214,7 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
       const node = evt.target
       const { x, y } = node.position()
       onPositionChangeRef.current(node.id(), node.data('kind'), x, y)
+      reapplyIsolation(cy)
     })
     cyRef.current = cy
     return () => { cy.destroy(); cyRef.current = null }
@@ -206,6 +238,7 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
 
     cy.add([...nodes, ...edges])
     cy.layout({ name: 'preset', animate: false, fit: false }).run()
+    reapplyIsolation(cy)
 
     if (unpositioned.length > 0) {
       for (const node of unpositioned) {

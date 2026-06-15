@@ -3,6 +3,21 @@ import * as S from './store'
 
 const OPERATORS = ['<', '<=', '>', '>=', '=', '!=']
 
+function computeIsolationIds(action, state) {
+  const ids = new Set([action.objectId, action.id])
+  for (const edge of action.edges) {
+    if (!edge.toEventId) continue
+    ids.add(edge.toEventId)
+    const evt = state.events.find(e => e.id === edge.toEventId)
+    if (evt) {
+      for (const evtEdge of evt.edges) {
+        if (evtEdge.toObjectId) ids.add(evtEdge.toObjectId)
+      }
+    }
+  }
+  return [...ids]
+}
+
 // ── Shared: Effect fields ────────────────────────────────────────
 function EffectFields({ effect, state, onChange }) {
   const setF = (field, val) => onChange({ ...(effect || {}), [field]: val })
@@ -165,16 +180,22 @@ function ObjectEventEdgeRow({ edge, state, mutate }) {
 }
 
 // ── Action block ─────────────────────────────────────────────────
-function ActionBlock({ action, state, mutate }) {
+function ActionBlock({ action, state, mutate, onIsolateAction, activeIsolationId, selectedId }) {
   const [open, setOpen] = useState(false)
+  const isIsolated = activeIsolationId === action.id
+  useEffect(() => { if (selectedId === action.id) setOpen(true) }, [selectedId, action.id])
   return (
-    <div className="action-block">
+    <div className="action-block" data-entity-id={action.id}>
       <div className="action-header" onClick={() => setOpen(o => !o)}>
         <span className="chevron" style={{ transform: open ? 'rotate(90deg)' : '' }}>▶</span>
         <input className="inp flex1" value={action.name}
           onClick={e => e.stopPropagation()}
           onChange={e => mutate(S.updateAction, action.id, { name: e.target.value })}
           placeholder="action name" />
+        <button
+          onClick={e => { e.stopPropagation(); onIsolateAction(action.id, computeIsolationIds(action, state)) }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', fontSize: 14, opacity: isIsolated ? 1 : 0.4, color: isIsolated ? '#ffdd44' : '#fff' }}
+          title="Isolate">👁</button>
         <button className="btn btn-icon-danger" onClick={e => { e.stopPropagation(); mutate(S.deleteAction, action.id) }}>✕</button>
       </div>
       {open && (
@@ -202,7 +223,7 @@ function ActionBlock({ action, state, mutate }) {
 }
 
 // ── Object block ─────────────────────────────────────────────────
-function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
+function ObjectBlock({ obj, state, mutate, isOpen, onToggle, onIsolateAction, activeIsolationId, selectedId }) {
   const actions = state.actions.filter(a => a.objectId === obj.id)
   const objEventEdges = state.objectEventEdges.filter(e => e.fromObjectId === obj.id)
 
@@ -237,7 +258,7 @@ function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
 
           <div className="subsection-label" style={{ marginTop: 8 }}>ACTIONS</div>
           {actions.map(action => (
-            <ActionBlock key={action.id} action={action} state={state} mutate={mutate} />
+            <ActionBlock key={action.id} action={action} state={state} mutate={mutate} onIsolateAction={onIsolateAction} activeIsolationId={activeIsolationId} selectedId={selectedId} />
           ))}
           <button className="btn btn-add" onClick={() => mutate(S.addAction, obj.id)}>+ Add Action</button>
 
@@ -277,13 +298,30 @@ function EventBlock({ evt, state, mutate, isOpen, onToggle }) {
 }
 
 // ── Main Sidebar ─────────────────────────────────────────────────
-export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect, onImport }) {
+export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect, onImport, onIsolate, onClearIsolation }) {
   const [openIds, setOpenIds] = useState(new Set())
+  const [activeIsolationId, setActiveIsolationId] = useState(null)
   const fileInputRef = useRef(null)
 
+  const handleIsolateAction = (actionId, nodeIds) => {
+    if (activeIsolationId === actionId) {
+      setActiveIsolationId(null)
+      onClearIsolation()
+    } else {
+      setActiveIsolationId(actionId)
+      onIsolate(nodeIds)
+    }
+  }
+
   useEffect(() => {
-    if (selectedId) setOpenIds(prev => new Set([...prev, selectedId]))
-  }, [selectedId])
+    if (!selectedId) return
+    setOpenIds(prev => {
+      const next = new Set([...prev, selectedId])
+      const action = state.actions.find(a => a.id === selectedId)
+      if (action) next.add(action.objectId)
+      return next
+    })
+  }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = id => {
     setOpenIds(prev => {
@@ -332,7 +370,7 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
 
         {state.objects.map(obj => (
           <ObjectBlock key={obj.id} obj={obj} state={state} mutate={mutate}
-            isOpen={openIds.has(obj.id)} onToggle={() => toggle(obj.id)} />
+            isOpen={openIds.has(obj.id)} onToggle={() => toggle(obj.id)} onIsolateAction={handleIsolateAction} activeIsolationId={activeIsolationId} selectedId={selectedId} />
         ))}
 
         <div className="section-header" style={{ marginTop: 8 }}>
