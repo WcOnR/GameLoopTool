@@ -132,8 +132,9 @@ body {
   border-top: 1px solid #1e2e50;
 }
 
-/* ── Effect fields ───────────────────────────────────────────── */
+/* ── Effect / Condition fields ───────────────────────────────── */
 .effect-fields { display: flex; flex-direction: column; gap: 3px; }
+.sub-fields { display: flex; flex-direction: column; gap: 3px; }
 
 /* ── Edge block ──────────────────────────────────────────────── */
 .edge-block {

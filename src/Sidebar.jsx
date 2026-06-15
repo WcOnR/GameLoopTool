@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
 import * as S from './store'
 
+const OPERATORS = ['<', '<=', '>', '>=', '=', '!=']
+
 // ── Shared: Effect fields ────────────────────────────────────────
 function EffectFields({ effect, state, onChange }) {
   const setF = (field, val) => onChange({ ...(effect || {}), [field]: val })
   const selectedObj = state.objects.find(o => o.id === effect?.targetObjectId)
   return (
-    <div className="effect-fields">
+    <div className="sub-fields">
       <div className="field-row">
-        <span className="field-label">Object</span>
+        <span className="field-label">Obj</span>
         <select className="inp flex1" value={effect?.targetObjectId || ''}
           onChange={e => onChange(e.target.value ? { ...(effect || {}), targetObjectId: e.target.value, targetAttrId: '' } : null)}>
           <option value="">none</option>
@@ -30,138 +32,141 @@ function EffectFields({ effect, state, onChange }) {
           <span className="field-label">Delta</span>
           <input className="inp small" type="number" value={effect?.delta ?? ''}
             onChange={e => setF('delta', e.target.value === '' ? 0 : Number(e.target.value))} />
-          <button className="btn btn-sm" onClick={() => onChange(null)}>Clear</button>
         </div>
       )}
     </div>
   )
 }
 
-// ── Action edge row (→ Event only) ──────────────────────────────
+// ── Shared: Condition fields ─────────────────────────────────────
+function ConditionFields({ condition, state, onChange }) {
+  const setF = (field, val) => onChange({ ...(condition || { operator: '<', value: 0 }), [field]: val })
+  const selectedObj = state.objects.find(o => o.id === condition?.objectId)
+  return (
+    <div className="sub-fields">
+      <div className="field-row">
+        <span className="field-label">Obj</span>
+        <select className="inp flex1" value={condition?.objectId || ''}
+          onChange={e => onChange(e.target.value ? { ...(condition || { operator: '<', value: 0 }), objectId: e.target.value, attrId: '' } : null)}>
+          <option value="">none</option>
+          {state.objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+      </div>
+      {selectedObj && (
+        <>
+          <div className="field-row">
+            <span className="field-label">Attr</span>
+            <select className="inp flex1" value={condition?.attrId || ''}
+              onChange={e => setF('attrId', e.target.value)}>
+              <option value="">-- attr --</option>
+              {selectedObj.attrs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div className="field-row">
+            <span className="field-label">Op / Val</span>
+            <select className="inp" style={{ width: 52 }} value={condition?.operator || '<'}
+              onChange={e => setF('operator', e.target.value)}>
+              {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+            </select>
+            <input className="inp small" type="number" value={condition?.value ?? 0}
+              onChange={e => setF('value', Number(e.target.value))} />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Generic edge block (collapsible) ────────────────────────────
+function EdgeBlock({ label, onDelete, children }) {
+  const [open, setOpen] = useState(true)
+  return (
+    <div className="edge-block">
+      <div className="edge-summary" onClick={() => setOpen(o => !o)}>
+        <span className="edge-label">{label}</span>
+        <span className="chevron" style={{ transform: open ? 'rotate(90deg)' : '' }}>▶</span>
+        <button className="btn btn-icon-danger" onClick={e => { e.stopPropagation(); onDelete() }}>✕</button>
+      </div>
+      {open && <div className="edge-body">{children}</div>}
+    </div>
+  )
+}
+
+// ── Action edge row (→ Event) ────────────────────────────────────
 function ActionEdgeRow({ edge, state, actionId, mutate }) {
-  const [open, setOpen] = useState(!edge.toEventId)
-  const label = (() => {
-    const evt = state.events.find(e => e.id === edge.toEventId)
-    const eff = edge.effect?.targetObjectId
-      ? (() => {
-          const o = state.objects.find(x => x.id === edge.effect.targetObjectId)
-          const a = o?.attrs.find(x => x.id === edge.effect.targetAttrId)
-          return o && a ? ` [${o.name}:${a.name}] ${edge.effect.delta}` : ''
-        })()
-      : ''
-    return evt ? `→ ${evt.name}${eff}` : '→ ?'
-  })()
-
+  const evt = state.events.find(e => e.id === edge.toEventId)
+  const label = evt ? `→ ${evt.name}` : '→ ?'
   return (
-    <div className="edge-block">
-      <div className="edge-summary" onClick={() => setOpen(o => !o)}>
-        <span className="edge-label">{label}</span>
-        <span className="chevron" style={{ transform: open ? 'rotate(90deg)' : '' }}>▶</span>
-        <button className="btn btn-icon-danger" onClick={e => { e.stopPropagation(); mutate(S.deleteActionEdge, actionId, edge.id) }}>✕</button>
+    <EdgeBlock label={label} onDelete={() => mutate(S.deleteActionEdge, actionId, edge.id)}>
+      <div className="field-row">
+        <span className="field-label">→ Event</span>
+        <select className="inp flex1" value={edge.toEventId || ''}
+          onChange={e => mutate(S.updateActionEdge, actionId, edge.id, { toEventId: e.target.value })}>
+          <option value="">-- event --</option>
+          {state.events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+        </select>
       </div>
-      {open && (
-        <div className="edge-body">
-          <div className="field-row">
-            <span className="field-label">→ Event</span>
-            <select className="inp flex1" value={edge.toEventId || ''}
-              onChange={e => mutate(S.updateActionEdge, actionId, edge.id, { toEventId: e.target.value })}>
-              <option value="">-- select event --</option>
-              {state.events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-            </select>
-          </div>
-          <div className="subsection-label">Effect</div>
-          <EffectFields effect={edge.effect} state={state}
-            onChange={eff => mutate(S.updateActionEdge, actionId, edge.id, { effect: eff })} />
-        </div>
-      )}
-    </div>
+      <div className="subsection-label">Effect</div>
+      <EffectFields effect={edge.effect} state={state}
+        onChange={eff => mutate(S.updateActionEdge, actionId, edge.id, { effect: eff })} />
+      <div className="subsection-label">Condition</div>
+      <ConditionFields condition={edge.condition} state={state}
+        onChange={cond => mutate(S.updateActionEdge, actionId, edge.id, { condition: cond })} />
+    </EdgeBlock>
   )
 }
 
-// ── Event edge row (→ Attr only) ─────────────────────────────────
+// ── Event edge row (→ Object) ────────────────────────────────────
 function EventEdgeRow({ edge, state, eventId, mutate }) {
-  const [open, setOpen] = useState(!edge.toAttrId)
-
-  // Build attr options: all attrs across all objects
-  const attrOptions = []
-  for (const obj of state.objects) {
-    for (const attr of obj.attrs) {
-      attrOptions.push({ id: attr.id, label: `${obj.name}: ${attr.name}` })
-    }
-  }
-
-  const label = (() => {
-    let attrLabel = '?'
-    for (const obj of state.objects) {
-      const attr = obj.attrs.find(a => a.id === edge.toAttrId)
-      if (attr) { attrLabel = `${obj.name}: ${attr.name}`; break }
-    }
-    const eff = edge.effect?.targetObjectId
-      ? (() => {
-          const o = state.objects.find(x => x.id === edge.effect.targetObjectId)
-          const a = o?.attrs.find(x => x.id === edge.effect.targetAttrId)
-          return o && a ? ` [${o.name}:${a.name}] ${edge.effect.delta}` : ''
-        })()
-      : ''
-    return `${attrLabel}${eff}`
-  })()
-
+  const obj = state.objects.find(o => o.id === edge.toObjectId)
+  const label = obj ? `→ ${obj.name}` : '→ ?'
   return (
-    <div className="edge-block">
-      <div className="edge-summary" onClick={() => setOpen(o => !o)}>
-        <span className="edge-label">{label}</span>
-        <span className="chevron" style={{ transform: open ? 'rotate(90deg)' : '' }}>▶</span>
-        <button className="btn btn-icon-danger" onClick={e => { e.stopPropagation(); mutate(S.deleteEventEdge, eventId, edge.id) }}>✕</button>
+    <EdgeBlock label={label} onDelete={() => mutate(S.deleteEventEdge, eventId, edge.id)}>
+      <div className="field-row">
+        <span className="field-label">→ Object</span>
+        <select className="inp flex1" value={edge.toObjectId || ''}
+          onChange={e => mutate(S.updateEventEdge, eventId, edge.id, { toObjectId: e.target.value })}>
+          <option value="">-- object --</option>
+          {state.objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
       </div>
-      {open && (
-        <div className="edge-body">
-          <div className="field-row">
-            <span className="field-label">→ Attr</span>
-            <select className="inp flex1" value={edge.toAttrId || ''}
-              onChange={e => mutate(S.updateEventEdge, eventId, edge.id, { toAttrId: e.target.value })}>
-              <option value="">-- select attr --</option>
-              {attrOptions.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-            </select>
-          </div>
-          <div className="subsection-label">Effect</div>
-          <EffectFields effect={edge.effect} state={state}
-            onChange={eff => mutate(S.updateEventEdge, eventId, edge.id, { effect: eff })} />
-        </div>
-      )}
-    </div>
+      <div className="subsection-label">Effect</div>
+      <EffectFields effect={edge.effect} state={state}
+        onChange={eff => mutate(S.updateEventEdge, eventId, edge.id, { effect: eff })} />
+      <div className="subsection-label">Condition</div>
+      <ConditionFields condition={edge.condition} state={state}
+        onChange={cond => mutate(S.updateEventEdge, eventId, edge.id, { condition: cond })} />
+    </EdgeBlock>
   )
 }
 
-// ── Trigger row ──────────────────────────────────────────────────
-function TriggerRow({ trigger, state, eventId, mutate }) {
-  const obj = state.objects.find(o => o.id === trigger.objectId)
+// ── Object→Event edge row ────────────────────────────────────────
+function ObjectEventEdgeRow({ edge, state, mutate }) {
+  const evt = state.events.find(e => e.id === edge.toEventId)
+  const label = evt ? `→ ${evt.name}` : '→ ?'
   return (
-    <div className="trigger-row">
-      <select className="inp flex1" value={trigger.objectId || ''}
-        onChange={e => mutate(S.updateTrigger, eventId, trigger.id, { objectId: e.target.value, attrId: '' })}>
-        <option value="">-- object --</option>
-        {state.objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-      </select>
-      <select className="inp flex1" value={trigger.attrId || ''}
-        onChange={e => mutate(S.updateTrigger, eventId, trigger.id, { attrId: e.target.value })}>
-        <option value="">-- attr --</option>
-        {(obj?.attrs || []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-      </select>
-      <select className="inp" style={{ width: 52 }} value={trigger.condition || '<'}
-        onChange={e => mutate(S.updateTrigger, eventId, trigger.id, { condition: e.target.value })}>
-        {['<', '<=', '>', '>=', '=', '!='].map(c => <option key={c} value={c}>{c}</option>)}
-      </select>
-      <input className="inp small" type="number" value={trigger.value ?? 0}
-        onChange={e => mutate(S.updateTrigger, eventId, trigger.id, { value: Number(e.target.value) })} />
-      <button className="btn btn-icon-danger" onClick={() => mutate(S.deleteTrigger, eventId, trigger.id)}>✕</button>
-    </div>
+    <EdgeBlock label={label} onDelete={() => mutate(S.deleteObjectEventEdge, edge.id)}>
+      <div className="field-row">
+        <span className="field-label">→ Event</span>
+        <select className="inp flex1" value={edge.toEventId || ''}
+          onChange={e => mutate(S.updateObjectEventEdge, edge.id, { toEventId: e.target.value })}>
+          <option value="">-- event --</option>
+          {state.events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+        </select>
+      </div>
+      <div className="subsection-label">Effect</div>
+      <EffectFields effect={edge.effect} state={state}
+        onChange={eff => mutate(S.updateObjectEventEdge, edge.id, { effect: eff })} />
+      <div className="subsection-label">Condition</div>
+      <ConditionFields condition={edge.condition} state={state}
+        onChange={cond => mutate(S.updateObjectEventEdge, edge.id, { condition: cond })} />
+    </EdgeBlock>
   )
 }
 
 // ── Action block ─────────────────────────────────────────────────
-function ActionBlock({ action, state, mutate, defaultOpen }) {
-  const [open, setOpen] = useState(defaultOpen || false)
-
+function ActionBlock({ action, state, mutate }) {
+  const [open, setOpen] = useState(false)
   return (
     <div className="action-block">
       <div className="action-header" onClick={() => setOpen(o => !o)}>
@@ -177,8 +182,15 @@ function ActionBlock({ action, state, mutate, defaultOpen }) {
           <div className="subsection-label">OWNER EFFECT</div>
           <EffectFields effect={action.effect} state={state}
             onChange={eff => mutate(S.updateAction, action.id, { effect: eff })} />
+          <div className="subsection-label">CONDITION</div>
+          <ConditionFields condition={action.condition} state={state}
+            onChange={cond => mutate(S.updateAction, action.id, { condition: cond })} />
+          <button className="btn btn-sm" style={{ marginTop: 4 }}
+            onClick={() => mutate(S.updateAction, action.id, { effect: null, condition: null })}>
+            Clear effect &amp; condition
+          </button>
 
-          <div className="subsection-label" style={{ marginTop: 6 }}>EDGES</div>
+          <div className="subsection-label" style={{ marginTop: 8 }}>EDGES → Events</div>
           {action.edges.map(edge => (
             <ActionEdgeRow key={edge.id} edge={edge} state={state} actionId={action.id} mutate={mutate} />
           ))}
@@ -192,12 +204,12 @@ function ActionBlock({ action, state, mutate, defaultOpen }) {
 // ── Object block ─────────────────────────────────────────────────
 function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
   const actions = state.actions.filter(a => a.objectId === obj.id)
+  const objEventEdges = state.objectEventEdges.filter(e => e.fromObjectId === obj.id)
 
   return (
     <div className="entity-block" data-entity-id={obj.id}>
       <div className="entity-header">
-        <span className="chevron" style={{ transform: isOpen ? 'rotate(90deg)' : '' }}
-          onClick={onToggle}>▶</span>
+        <span className="chevron" style={{ transform: isOpen ? 'rotate(90deg)' : '' }} onClick={onToggle}>▶</span>
         <input className="inp flex1 name-input" value={obj.name}
           onChange={e => mutate(S.updateObject, obj.id, { name: e.target.value })}
           placeholder="object name" />
@@ -228,6 +240,12 @@ function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
             <ActionBlock key={action.id} action={action} state={state} mutate={mutate} />
           ))}
           <button className="btn btn-add" onClick={() => mutate(S.addAction, obj.id)}>+ Add Action</button>
+
+          <div className="subsection-label" style={{ marginTop: 8 }}>EVENT CONNECTIONS</div>
+          {objEventEdges.map(edge => (
+            <ObjectEventEdgeRow key={edge.id} edge={edge} state={state} mutate={mutate} />
+          ))}
+          <button className="btn btn-add" onClick={() => mutate(S.addObjectEventEdge, obj.id)}>+ Add Connection</button>
         </div>
       )}
     </div>
@@ -239,8 +257,7 @@ function EventBlock({ evt, state, mutate, isOpen, onToggle }) {
   return (
     <div className="entity-block" data-entity-id={evt.id}>
       <div className="entity-header">
-        <span className="chevron" style={{ transform: isOpen ? 'rotate(90deg)' : '' }}
-          onClick={onToggle}>▶</span>
+        <span className="chevron" style={{ transform: isOpen ? 'rotate(90deg)' : '' }} onClick={onToggle}>▶</span>
         <input className="inp flex1 name-input" value={evt.name}
           onChange={e => mutate(S.updateEvent, evt.id, { name: e.target.value })}
           placeholder="event name" />
@@ -248,13 +265,7 @@ function EventBlock({ evt, state, mutate, isOpen, onToggle }) {
       </div>
       {isOpen && (
         <div className="entity-body">
-          <div className="subsection-label">TRIGGERS</div>
-          {evt.triggers.map(t => (
-            <TriggerRow key={t.id} trigger={t} state={state} eventId={evt.id} mutate={mutate} />
-          ))}
-          <button className="btn btn-add" onClick={() => mutate(S.addTrigger, evt.id)}>+ Add Trigger</button>
-
-          <div className="subsection-label" style={{ marginTop: 8 }}>EDGES</div>
+          <div className="subsection-label">EDGES → Objects</div>
           {evt.edges.map(edge => (
             <EventEdgeRow key={edge.id} edge={edge} state={state} eventId={evt.id} mutate={mutate} />
           ))}
@@ -270,7 +281,6 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
   const [openIds, setOpenIds] = useState(new Set())
   const fileInputRef = useRef(null)
 
-  // When graph clicks an entity, open its block
   useEffect(() => {
     if (selectedId) setOpenIds(prev => new Set([...prev, selectedId]))
   }, [selectedId])
@@ -329,7 +339,7 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
           <span>EVENTS</span>
           <button className="btn btn-add-inline" onClick={() => {
             const id = S.newId()
-            mutate(s => ({ ...s, events: [...s.events, { id, name: 'New Event', triggers: [], edges: [] }] }))
+            mutate(s => ({ ...s, events: [...s.events, { id, name: 'New Event', edges: [] }] }))
             setOpenIds(prev => new Set([...prev, id]))
           }}>+ Add Event</button>
         </div>
