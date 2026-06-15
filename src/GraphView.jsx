@@ -21,6 +21,14 @@ function findEmptySpot(existing) {
   return { x: cx + clearance * 2, y: cy }
 }
 
+function nodeSize(label) {
+  const lines = label.split('\n')
+  const longest = Math.max(...lines.map(l => l.length))
+  const w = Math.max(80, longest * 4 + 4)
+  const h = Math.max(40, lines.length * 10 + 2)
+  return { w, h }
+}
+
 // Build edge label from optional effect + condition
 function edgeLabel(edge, state) {
   const effectPart = (() => {
@@ -49,15 +57,22 @@ function buildElements(state) {
 
   for (const obj of state.objects) {
     const attrLines = obj.attrs.map(a => `${a.name}: ${a.value}`).join('\n')
+    const label = obj.name + (attrLines ? '\n' + attrLines : '')
+    const { w, h } = nodeSize(label)
     const el = {
-      data: { id: obj.id, label: obj.name + (attrLines ? '\n' + attrLines : ''), kind: 'object', entityId: obj.id },
+      data: { id: obj.id, label, kind: 'object', entityId: obj.id },
+      style: { width: w, height: h, 'text-max-width': w - 16 },
     }
     if (obj.x !== undefined && obj.y !== undefined) el.position = { x: obj.x, y: obj.y }
     nodes.push(el)
   }
 
   for (const action of state.actions) {
-    const el = { data: { id: action.id, label: action.name, kind: 'action', entityId: action.id } }
+    const { w, h } = nodeSize(action.name)
+    const el = {
+      data: { id: action.id, label: action.name, kind: 'action', entityId: action.id },
+      style: { width: w, height: h, 'text-max-width': w - 16 },
+    }
     if (action.x !== undefined && action.y !== undefined) el.position = { x: action.x, y: action.y }
     nodes.push(el)
 
@@ -81,7 +96,11 @@ function buildElements(state) {
   }
 
   for (const evt of state.events) {
-    const el = { data: { id: evt.id, label: evt.name, kind: 'event', entityId: evt.id } }
+    const { w, h } = nodeSize(evt.name)
+    const el = {
+      data: { id: evt.id, label: evt.name, kind: 'event', entityId: evt.id },
+      style: { width: w, height: h, 'text-max-width': w - 16 },
+    }
     if (evt.x !== undefined && evt.y !== undefined) el.position = { x: evt.x, y: evt.y }
     nodes.push(el)
 
