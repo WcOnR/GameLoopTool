@@ -2,6 +2,10 @@
 
 A visual editor for game mechanics schemas. Build Objects, Attributes, Actions, and Events, then see the connections rendered as a live directed graph.
 
+## Open tool
+
+https://wconr.github.io/GameLoopTool/
+
 ## Run locally
 
 ```bash
