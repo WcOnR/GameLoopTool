@@ -182,7 +182,7 @@ const STYLE = [
   },
 ]
 
-export default function GraphView({ state, selectedId, onSelectEntity, onPositionChange }) {
+export default function GraphView({ state, selectedId, onSelectEntity, onPositionChange, fitCounter, panTo }) {
   const containerRef = useRef(null)
   const cyRef = useRef(null)
   // Ref so dragfree handler always has latest callback without re-binding
@@ -240,7 +240,7 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
     }
 
     cy.add([...nodes, ...edges])
-    cy.layout({ name: 'preset', animate: false }).run()
+    cy.layout({ name: 'preset', animate: false, fit: false }).run()
 
     // Save positions for newly placed nodes
     if (unpositioned.length > 0) {
@@ -255,6 +255,23 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
       }
     }
   }, [state])
+
+  // Fit viewport after JSON import
+  useEffect(() => {
+    if (!fitCounter) return
+    const cy = cyRef.current
+    if (!cy) return
+    cy.fit(cy.elements(), 40)
+  }, [fitCounter])
+
+  // Pan to node when sidebar entity is clicked
+  useEffect(() => {
+    if (!panTo?.id) return
+    const cy = cyRef.current
+    if (!cy) return
+    const node = cy.getElementById(panTo.id)
+    if (node.length > 0) cy.animate({ center: { eles: node }, duration: 300 })
+  }, [panTo])
 
   // Update highlight when selectedId changes
   useEffect(() => {

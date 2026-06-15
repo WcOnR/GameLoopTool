@@ -266,7 +266,7 @@ function EventBlock({ evt, state, mutate, isOpen, onToggle }) {
 }
 
 // ── Main Sidebar ─────────────────────────────────────────────────
-export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect }) {
+export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect, onImport }) {
   const [openIds, setOpenIds] = useState(new Set())
   const fileInputRef = useRef(null)
 
@@ -295,12 +295,8 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
   const handleImportFile = file => {
     const reader = new FileReader()
     reader.onload = e => {
-      try {
-        const parsed = JSON.parse(e.target.result)
-        if (parsed.objects && parsed.events) {
-          mutate(() => parsed)
-        } else alert('Invalid schema file.')
-      } catch { alert('Failed to parse JSON.') }
+      try { onImport(JSON.parse(e.target.result)) }
+      catch { alert('Failed to parse JSON.') }
     }
     reader.readAsText(file)
   }

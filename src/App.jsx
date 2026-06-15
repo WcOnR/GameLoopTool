@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { loadState, saveState, updateObject, updateAction, updateEvent } from './store'
 import Sidebar from './Sidebar'
 import GraphView from './GraphView'
@@ -7,6 +7,9 @@ export default function App() {
   const [state, setState] = useState(() => loadState())
   const [selectedId, setSelectedId] = useState(null)
   const [dragging, setDragging] = useState(false)
+  const [fitCounter, setFitCounter] = useState(0)
+  const panToRef = useRef({ id: null, seq: 0 })
+  const [panTo, setPanTo] = useState({ id: null, seq: 0 })
 
   const mutate = useCallback((fn, ...args) => {
     setState(prev => {
@@ -16,12 +19,21 @@ export default function App() {
     })
   }, [])
 
+  // Shared import handler — used by both file picker and drag-and-drop
+  const handleImport = useCallback((parsed) => {
+    if (!parsed.objects || !parsed.events) { alert('Invalid schema file.'); return }
+    setState(parsed)
+    saveState(parsed)
+    setFitCounter(c => c + 1)
+  }, [])
+
   const handlePositionChange = useCallback((id, kind, x, y) => {
     if (kind === 'object') mutate(updateObject, id, { x, y })
     else if (kind === 'action') mutate(updateAction, id, { x, y })
     else if (kind === 'event') mutate(updateEvent, id, { x, y })
   }, [mutate])
 
+  // Graph node clicked — highlight + scroll sidebar, no pan
   const handleGraphSelect = useCallback(id => {
     setSelectedId(id)
     setTimeout(() => {
@@ -30,6 +42,13 @@ export default function App() {
     }, 50)
   }, [])
 
+  // Sidebar entity clicked — highlight + pan graph to node
+  const handleSidebarSelect = useCallback(id => {
+    setSelectedId(id)
+    setPanTo(prev => ({ id, seq: prev.seq + 1 }))
+  }, [])
+
+  // Drag-and-drop import
   useEffect(() => {
     const onDragOver = e => { e.preventDefault(); setDragging(true) }
     const onDragLeave = () => setDragging(false)
@@ -40,13 +59,8 @@ export default function App() {
       if (!file) return
       const reader = new FileReader()
       reader.onload = evt => {
-        try {
-          const parsed = JSON.parse(evt.target.result)
-          if (parsed.objects && parsed.events) {
-            setState(parsed)
-            saveState(parsed)
-          } else alert('Invalid schema file.')
-        } catch { alert('Failed to parse JSON.') }
+        try { handleImport(JSON.parse(evt.target.result)) }
+        catch { alert('Failed to parse JSON.') }
       }
       reader.readAsText(file)
     }
@@ -58,7 +72,7 @@ export default function App() {
       window.removeEventListener('dragleave', onDragLeave)
       window.removeEventListener('drop', onDrop)
     }
-  }, [])
+  }, [handleImport])
 
   return (
     <div className="app">
@@ -67,14 +81,17 @@ export default function App() {
         state={state}
         mutate={mutate}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={handleSidebarSelect}
         onClearSelect={() => setSelectedId(null)}
+        onImport={handleImport}
       />
       <GraphView
         state={state}
         selectedId={selectedId}
         onSelectEntity={handleGraphSelect}
         onPositionChange={handlePositionChange}
+        fitCounter={fitCounter}
+        panTo={panTo}
       />
     </div>
   )
