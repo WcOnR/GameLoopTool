@@ -61,7 +61,7 @@ export default function App() {
 
   // Drag-and-drop import
   useEffect(() => {
-    const onDragOver = e => { e.preventDefault(); setDragging(true) }
+    const onDragOver = e => { e.preventDefault(); if (e.dataTransfer.types.includes('Files')) setDragging(true) }
     const onDragLeave = () => setDragging(false)
     const onDrop = e => {
       e.preventDefault()

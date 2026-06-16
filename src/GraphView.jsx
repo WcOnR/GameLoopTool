@@ -62,6 +62,11 @@ function getNodeLabel(node, state, loop) {
       const action = (obj.actions || []).find(a => a.id === node.refId)
       if (action) return `${obj.name}: ${action.name}`
     }
+    const localAction = (loop.localActions || []).find(a => a.id === node.refId)
+    if (localAction) {
+      const obj = state.objects.find(o => o.id === localAction.objectId)
+      return `${obj?.name ?? '?'}: ${localAction.name}`
+    }
     return '?'
   }
   if (node.refType === 'event') {

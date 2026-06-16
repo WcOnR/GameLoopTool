@@ -118,7 +118,7 @@ export function deleteAction(s, objectId, actionId) {
 
 // ── Loops ────────────────────────────────────────────────────────
 export function addLoop(s) {
-  return { ...s, loops: [...s.loops, { id: newId(), name: 'New Loop', nodes: [], localEvents: [], edges: [] }] }
+  return { ...s, loops: [...s.loops, { id: newId(), name: 'New Loop', nodes: [], localEvents: [], localActions: [], edges: [] }] }
 }
 
 export function updateLoop(s, loopId, patch) {
@@ -147,6 +147,7 @@ export function removeLoopNode(s, loopId, nodeId) {
     loops: s.loops.map(l => {
       if (l.id !== loopId) return l
       const node = l.nodes.find(n => n.id === nodeId)
+      const isLocalAction = node?.refType === 'action' && (l.localActions || []).some(a => a.id === node.refId)
       return {
         ...l,
         nodes: l.nodes.filter(n => n.id !== nodeId),
@@ -154,6 +155,9 @@ export function removeLoopNode(s, loopId, nodeId) {
         localEvents: node?.refType === 'event'
           ? l.localEvents.filter(e => e.id !== node.refId)
           : l.localEvents,
+        localActions: isLocalAction
+          ? (l.localActions || []).filter(a => a.id !== node.refId)
+          : (l.localActions || []),
       }
     }),
   }
@@ -217,16 +221,44 @@ export function addLocalAction(s, loopId, objectId) {
   const actionId = newId()
   return {
     ...s,
-    objects: s.objects.map(o =>
-      o.id === objectId
-        ? { ...o, actions: [...(o.actions || []), { id: actionId, name: 'action' }] }
-        : o
-    ),
     loops: s.loops.map(l =>
       l.id === loopId
-        ? { ...l, nodes: [...l.nodes, { id: newId(), refType: 'action', refId: actionId }] }
+        ? {
+            ...l,
+            localActions: [...(l.localActions || []), { id: actionId, name: 'action', objectId }],
+            nodes: [...l.nodes, { id: newId(), refType: 'action', refId: actionId }],
+          }
         : l
     ),
+  }
+}
+
+export function updateLocalAction(s, loopId, actionId, patch) {
+  return {
+    ...s,
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, localActions: (l.localActions || []).map(a => a.id === actionId ? { ...a, ...patch } : a) }
+        : l
+    ),
+  }
+}
+
+export function deleteLocalAction(s, loopId, actionId) {
+  return {
+    ...s,
+    loops: s.loops.map(l => {
+      if (l.id !== loopId) return l
+      const removedNodeIds = new Set(
+        l.nodes.filter(n => n.refType === 'action' && n.refId === actionId).map(n => n.id)
+      )
+      return {
+        ...l,
+        localActions: (l.localActions || []).filter(a => a.id !== actionId),
+        nodes: l.nodes.filter(n => !removedNodeIds.has(n.id)),
+        edges: l.edges.filter(e => !removedNodeIds.has(e.fromLoopNodeId) && !removedNodeIds.has(e.toLoopNodeId)),
+      }
+    }),
   }
 }
 

@@ -13,6 +13,11 @@ function loopNodeLabel(node, state, loop) {
       const action = (obj.actions || []).find(a => a.id === node.refId)
       if (action) return { text: `${obj.name}: ${action.name}`, badge: 'ACT' }
     }
+    const localAction = (loop.localActions || []).find(a => a.id === node.refId)
+    if (localAction) {
+      const obj = state.objects.find(o => o.id === localAction.objectId)
+      return { text: `${obj?.name ?? '?'}: ${localAction.name}`, badge: 'ACT' }
+    }
     return { text: '?', badge: 'ACT' }
   }
   if (node.refType === 'event') {
@@ -213,6 +218,7 @@ function LoopPanel({ loop, state, mutate, selectedId, onSelect }) {
   const [expandedNodeIds, setExpandedNodeIds] = useState(new Set())
   const pickerWrapRef = useRef(null)
   const actionPickerWrapRef = useRef(null)
+  const dragNodeIdRef = useRef(null)
   const loopId = loop.id
 
   useEffect(() => {
@@ -244,6 +250,12 @@ function LoopPanel({ loop, state, mutate, selectedId, onSelect }) {
 
   return (
     <div className="loop-panel">
+      <div className="loop-name-row">
+        <span className="field-label">Loop name</span>
+        <input className="inp flex1" value={loop.name}
+          onChange={e => mutate(S.updateLoop, loopId, { name: e.target.value })}
+          placeholder="loop name" />
+      </div>
       <div className="loop-panel-actions">
         <div style={{ position: 'relative' }} ref={pickerWrapRef}>
           <button className="btn btn-add" onClick={() => setShowPicker(v => !v)}>+ Add node</button>
@@ -289,27 +301,58 @@ function LoopPanel({ loop, state, mutate, selectedId, onSelect }) {
                 placeholder="event name" />
             : <span className="loop-node-label">{label}</span>
         } else if (node.refType === 'action') {
-          let foundObj = null, foundAction = null
-          for (const obj of state.objects) {
-            const a = (obj.actions || []).find(a => a.id === node.refId)
-            if (a) { foundObj = obj; foundAction = a; break }
-          }
-          nameEl = foundAction
-            ? <><span className="loop-node-obj-prefix">{foundObj.name}:</span>
-                <input className="inp flex1 loop-node-name-inp" value={foundAction.name}
+          const localAction = (loop.localActions || []).find(a => a.id === node.refId)
+          if (localAction) {
+            const obj = state.objects.find(o => o.id === localAction.objectId)
+            nameEl = (
+              <>
+                <span className="loop-node-obj-prefix">{obj?.name ?? '?'}:</span>
+                <input className="inp flex1 loop-node-name-inp" value={localAction.name}
                   onClick={e => e.stopPropagation()}
-                  onChange={e => mutate(S.updateAction, foundObj.id, foundAction.id, { name: e.target.value })}
-                  placeholder="action name" /></>
-            : <span className="loop-node-label">{label}</span>
+                  onChange={e => mutate(S.updateLocalAction, loopId, localAction.id, { name: e.target.value })}
+                  placeholder="action name" />
+              </>
+            )
+          } else {
+            let foundObj = null, foundAction = null
+            for (const obj of state.objects) {
+              const a = (obj.actions || []).find(a => a.id === node.refId)
+              if (a) { foundObj = obj; foundAction = a; break }
+            }
+            nameEl = foundAction
+              ? <><span className="loop-node-obj-prefix">{foundObj.name}:</span>
+                  <input className="inp flex1 loop-node-name-inp" value={foundAction.name}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => mutate(S.updateAction, foundObj.id, foundAction.id, { name: e.target.value })}
+                    placeholder="action name" /></>
+              : <span className="loop-node-label">{label}</span>
+          }
         } else {
           nameEl = <span className="loop-node-label">{label}</span>
         }
 
         return (
-          <div key={node.id} className="loop-node-block" data-entity-id={node.id}>
+          <div key={node.id} className="loop-node-block" data-entity-id={node.id}
+            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+            onDrop={e => {
+              e.preventDefault()
+              const fromId = dragNodeIdRef.current
+              if (!fromId || fromId === node.id) return
+              const nodes = [...loop.nodes]
+              const fromIdx = nodes.findIndex(n => n.id === fromId)
+              const toIdx = nodes.findIndex(n => n.id === node.id)
+              const [moved] = nodes.splice(fromIdx, 1)
+              nodes.splice(toIdx, 0, moved)
+              mutate(S.updateLoop, loopId, { nodes })
+            }}>
             <div
               className={`loop-node-row${isSelected ? ' selected' : ''}`}
               onClick={() => onSelect(node.id)}>
+              <span className="node-drag-handle"
+                draggable
+                onDragStart={e => { dragNodeIdRef.current = node.id; e.dataTransfer.effectAllowed = 'move'; e.stopPropagation() }}
+                onDragEnd={() => { dragNodeIdRef.current = null }}
+                onClick={e => e.stopPropagation()}>⠿</span>
               <span className="chevron" style={{ transform: isExpanded ? 'rotate(90deg)' : '' }}
                 onClick={e => { e.stopPropagation(); toggleNode(node.id) }}>▶</span>
               <span className={`loop-node-badge badge-${node.refType}`}>{badge}</span>
@@ -391,11 +434,36 @@ function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
   )
 }
 
+const SIDEBAR_WIDTH_KEY = 'gameloop_sidebar_width'
+
 // ── Main Sidebar ─────────────────────────────────────────────────
 export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect, onImport, selectedLoopId, onLoopSelect }) {
   const [activeTab, setActiveTab] = useState('objects')
   const [openIds, setOpenIds] = useState(new Set())
   const fileInputRef = useRef(null)
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY), 10)
+    return (saved >= 200 && saved <= 500) ? saved : 240
+  })
+  const currentWidthRef = useRef(sidebarWidth)
+
+  const handleResizeStart = (e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = currentWidthRef.current
+    const onMouseMove = (mv) => {
+      const w = Math.min(500, Math.max(200, startWidth + (mv.clientX - startX)))
+      setSidebarWidth(w)
+      currentWidthRef.current = w
+    }
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, currentWidthRef.current)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
 
   const toggle = id => {
     setOpenIds(prev => {
@@ -426,7 +494,8 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
   const selectedLoop = state.loops.find(l => l.id === selectedLoopId)
 
   return (
-    <div className="sidebar">
+    <div className="sidebar" style={{ width: sidebarWidth, minWidth: sidebarWidth }}>
+      <div className="sidebar-resize-handle" onMouseDown={handleResizeStart} />
       <div className="sidebar-actions">
         <button className="btn btn-secondary" onClick={handleExport}>Export JSON</button>
         <button className="btn btn-secondary" onClick={() => fileInputRef.current.click()}>Import JSON</button>
@@ -459,22 +528,19 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
           </>
         ) : (
           <>
-            <div className="loop-pills-bar">
+            <div className="loop-tabs-bar">
               {state.loops.map(loop => (
-                <div key={loop.id}
-                  className={`loop-pill${loop.id === selectedLoopId ? ' active' : ''}`}
+                <button key={loop.id}
+                  className={`loop-tab-btn${loop.id === selectedLoopId ? ' active' : ''}`}
                   onClick={() => onLoopSelect(loop.id)}>
-                  <input className="inp loop-pill-name" value={loop.name}
-                    onClick={e => e.stopPropagation()}
-                    onChange={e => mutate(S.updateLoop, loop.id, { name: e.target.value })}
-                    title={loop.name} />
-                  <button className="btn btn-icon-danger"
-                    onClick={e => { e.stopPropagation(); mutate(S.deleteLoop, loop.id) }}>✕</button>
-                </div>
+                  <span className="loop-tab-name">{loop.name || 'Loop'}</span>
+                  <span className="loop-tab-close"
+                    onClick={e => { e.stopPropagation(); mutate(S.deleteLoop, loop.id) }}>✕</span>
+                </button>
               ))}
               <button className="btn btn-add loop-add-btn" onClick={() => {
                 const id = S.newId()
-                mutate(s => ({ ...s, loops: [...s.loops, { id, name: 'New Loop', nodes: [], localEvents: [], edges: [] }] }))
+                mutate(s => ({ ...s, loops: [...s.loops, { id, name: 'New Loop', nodes: [], localEvents: [], localActions: [], edges: [] }] }))
                 onLoopSelect(id)
               }}>+ Add Loop</button>
             </div>

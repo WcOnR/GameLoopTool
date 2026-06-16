@@ -23,7 +23,20 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
 }
+
+.sidebar-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: ew-resize;
+  z-index: 20;
+}
+.sidebar-resize-handle:hover { background: rgba(74, 122, 191, 0.35); }
 
 .graph-panel { flex: 1; position: relative; background: #0a0a18; }
 
@@ -240,12 +253,12 @@ select.inp { cursor: pointer; padding: 1px 3px; }
 .tab-btn:hover { color: #a0b8e0; }
 .tab-btn.active { color: #a0b8e0; border-bottom-color: #4a7abf; }
 
-/* ── Loop pills bar ──────────────────────────────────────────── */
-.loop-pills-bar {
+/* ── Loop tabs bar ───────────────────────────────────────────── */
+.loop-tabs-bar {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 8px 0;
   overflow-x: auto;
   border-bottom: 1px solid #1e2e50;
   flex-shrink: 0;
@@ -254,36 +267,51 @@ select.inp { cursor: pointer; padding: 1px 3px; }
   background: #141428;
   z-index: 1;
 }
-.loop-pills-bar::-webkit-scrollbar { height: 3px; }
-.loop-pills-bar::-webkit-scrollbar-thumb { background: #2a3a5e; border-radius: 2px; }
+.loop-tabs-bar::-webkit-scrollbar { height: 3px; }
+.loop-tabs-bar::-webkit-scrollbar-thumb { background: #2a3a5e; border-radius: 2px; }
 
-.loop-pill {
+.loop-tab-btn {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   background: #1a1a30;
   border: 1px solid #1e2e50;
-  border-radius: 12px;
-  padding: 2px 4px 2px 8px;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 6px 8px 6px 10px;
+  cursor: pointer;
   flex-shrink: 0;
-  cursor: pointer;
-}
-.loop-pill:hover { border-color: #3a4a6a; }
-.loop-pill.active { border-color: #4a7abf; background: #1a2a40; }
-
-.loop-pill-name {
-  background: none;
-  border: none;
-  color: #d0d8f0;
+  color: #6a7aa0;
   font-size: 11px;
-  padding: 0;
-  width: 70px;
-  outline: none;
-  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.1s, color 0.1s;
 }
-.loop-pill.active .loop-pill-name { color: #7ab0e0; }
+.loop-tab-btn:hover { background: #1e1e38; color: #a0b8e0; }
+.loop-tab-btn.active { background: #1a2a40; border-color: #4a7abf; color: #7ab0e0; }
 
-.loop-add-btn { flex-shrink: 0; }
+.loop-tab-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.loop-tab-close {
+  font-size: 10px;
+  color: #4a5a80;
+  padding: 0 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.loop-tab-close:hover { color: #ff8080; background: rgba(255,0,0,0.1); }
+
+.loop-add-btn { flex-shrink: 0; align-self: center; margin-bottom: 2px; }
+
+/* ── Loop name rename row ────────────────────────────────────── */
+.loop-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 4px;
+  border-bottom: 1px solid #1e2e50;
+  margin-bottom: 6px;
+}
 
 /* ── Node picker popover ─────────────────────────────────────── */
 .node-picker {
@@ -379,6 +407,19 @@ select.inp { cursor: pointer; padding: 1px 3px; }
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* ── Node drag handle ────────────────────────────────────────── */
+.node-drag-handle {
+  cursor: grab;
+  color: #2a3a5e;
+  font-size: 13px;
+  padding: 0 2px;
+  flex-shrink: 0;
+  user-select: none;
+  line-height: 1;
+}
+.node-drag-handle:hover { color: #6a7aa0; }
+.node-drag-handle:active { cursor: grabbing; }
 
 /* ── Loop node block (expandable with inline edges) ─────────── */
 .loop-node-block { margin-bottom: 2px; }
