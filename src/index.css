@@ -216,6 +216,198 @@ select.inp { cursor: pointer; padding: 1px 3px; }
   cursor: pointer;
 }
 
+/* ── Sidebar tabs ────────────────────────────────────────────── */
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid #1e2e50;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #4a5a80;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 7px 4px;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: #a0b8e0; }
+.tab-btn.active { color: #a0b8e0; border-bottom-color: #4a7abf; }
+
+/* ── Loop pills bar ──────────────────────────────────────────── */
+.loop-pills-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid #1e2e50;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: #141428;
+  z-index: 1;
+}
+.loop-pills-bar::-webkit-scrollbar { height: 3px; }
+.loop-pills-bar::-webkit-scrollbar-thumb { background: #2a3a5e; border-radius: 2px; }
+
+.loop-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #1a1a30;
+  border: 1px solid #1e2e50;
+  border-radius: 12px;
+  padding: 2px 4px 2px 8px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.loop-pill:hover { border-color: #3a4a6a; }
+.loop-pill.active { border-color: #4a7abf; background: #1a2a40; }
+
+.loop-pill-name {
+  background: none;
+  border: none;
+  color: #d0d8f0;
+  font-size: 11px;
+  padding: 0;
+  width: 70px;
+  outline: none;
+  cursor: pointer;
+}
+.loop-pill.active .loop-pill-name { color: #7ab0e0; }
+
+.loop-add-btn { flex-shrink: 0; }
+
+/* ── Node picker popover ─────────────────────────────────────── */
+.node-picker {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 100;
+  background: #1a1a30;
+  border: 1px solid #3a4a6a;
+  border-radius: 4px;
+  min-width: 190px;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.node-picker::-webkit-scrollbar { width: 4px; }
+.node-picker::-webkit-scrollbar-thumb { background: #2a3a5e; border-radius: 2px; }
+
+.node-picker-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #4a5a80;
+  padding: 5px 8px 2px;
+  text-transform: uppercase;
+}
+
+.node-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #d0d8f0;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  text-align: left;
+}
+.node-picker-item:hover { background: rgba(255,255,255,0.06); }
+.node-picker-empty { color: #4a5a80; font-size: 11px; padding: 10px 8px; }
+
+/* ── Node & event badges ─────────────────────────────────────── */
+.loop-node-badge {
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+.badge-object { background: #1a2a4a; color: #7ab0e0; }
+.badge-action { background: #0d2a1e; color: #7dffb3; }
+.badge-event  { background: #2a1a0a; color: #ffb870; }
+
+/* ── Loop panel ──────────────────────────────────────────────── */
+.loop-panel { padding: 6px 10px 16px; }
+.loop-panel-actions { display: flex; gap: 6px; margin-bottom: 2px; flex-wrap: wrap; }
+
+/* ── Loop node row ───────────────────────────────────────────── */
+.loop-node-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  cursor: pointer;
+}
+.loop-node-row:hover { background: rgba(255,255,255,0.04); }
+.loop-node-row.selected { background: rgba(74,122,191,0.15); }
+
+.loop-node-label {
+  flex: 1;
+  font-size: 11px;
+  color: #c0d0f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Inline name input inside node rows ─────────────────────── */
+.loop-node-name-inp {
+  font-size: 11px;
+  padding: 1px 4px;
+  background: rgba(13, 21, 37, 0.7);
+}
+.loop-node-obj-prefix {
+  font-size: 10px;
+  color: #4a5a80;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── Loop node block (expandable with inline edges) ─────────── */
+.loop-node-block { margin-bottom: 2px; }
+.loop-node-edges {
+  padding: 4px 4px 4px 22px;
+  border-left: 2px solid #1e2e50;
+  margin-left: 8px;
+  margin-bottom: 4px;
+}
+
+/* ── Loop event row ──────────────────────────────────────────── */
+.loop-event-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+
+/* ── Plain icon button ───────────────────────────────────────── */
+.btn-icon {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 1px 4px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.btn-icon:hover { opacity: 0.8; }
+
 /* ── Graph ───────────────────────────────────────────────────── */
 #cy { width: 100%; height: 100%; }
 

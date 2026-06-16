@@ -1,6 +1,6 @@
 const KEY = 'gameloop_v3'
 
-export const EMPTY = { objects: [], actions: [], events: [], objectEventEdges: [] }
+export const EMPTY = { objects: [], loops: [] }
 
 export function loadState() {
   localStorage.clear()
@@ -15,7 +15,7 @@ export const newId = () => crypto.randomUUID()
 
 // ── Objects ─────────────────────────────────────────────────────
 export function addObject(s) {
-  return { ...s, objects: [...s.objects, { id: newId(), name: 'New Object', attrs: [] }] }
+  return { ...s, objects: [...s.objects, { id: newId(), name: 'New Object', attrs: [], actions: [] }] }
 }
 
 export function updateObject(s, id, patch) {
@@ -23,31 +23,22 @@ export function updateObject(s, id, patch) {
 }
 
 export function deleteObject(s, id) {
-  const cleanEdge = e => ({
-    ...e,
-    effect: e.effect?.targetObjectId === id ? null : e.effect,
-    condition: e.condition?.objectId === id ? null : e.condition,
+  const obj = s.objects.find(o => o.id === id)
+  const actionIds = new Set((obj?.actions || []).map(a => a.id))
+
+  const loops = s.loops.map(loop => {
+    const removedNodeIds = new Set(
+      loop.nodes
+        .filter(n => (n.refType === 'object' && n.refId === id) || (n.refType === 'action' && actionIds.has(n.refId)))
+        .map(n => n.id)
+    )
+    if (removedNodeIds.size === 0) return loop
+    const nodes = loop.nodes.filter(n => !removedNodeIds.has(n.id))
+    const edges = loop.edges.filter(e => !removedNodeIds.has(e.fromLoopNodeId) && !removedNodeIds.has(e.toLoopNodeId))
+    return { ...loop, nodes, edges }
   })
 
-  const actions = s.actions
-    .filter(a => a.objectId !== id)
-    .map(a => ({
-      ...a,
-      effect: a.effect?.targetObjectId === id ? null : a.effect,
-      condition: a.condition?.objectId === id ? null : a.condition,
-      edges: a.edges.map(cleanEdge),
-    }))
-
-  const events = s.events.map(evt => ({
-    ...evt,
-    edges: evt.edges.filter(e => e.toObjectId !== id).map(cleanEdge),
-  }))
-
-  const objectEventEdges = s.objectEventEdges
-    .filter(e => e.fromObjectId !== id && e.condition?.objectId !== id)
-    .map(cleanEdge)
-
-  return { ...s, objects: s.objects.filter(o => o.id !== id), actions, events, objectEventEdges }
+  return { ...s, objects: s.objects.filter(o => o.id !== id), loops }
 }
 
 // ── Attrs ────────────────────────────────────────────────────────
@@ -82,128 +73,191 @@ export function deleteAttr(s, objectId, attrId) {
   }
 }
 
-// ── Actions ──────────────────────────────────────────────────────
+// ── Actions (nested under object, just { id, name }) ─────────────
 export function addAction(s, objectId) {
   return {
     ...s,
-    actions: [
-      ...s.actions,
-      { id: newId(), name: 'action', objectId, effect: null, condition: null, edges: [] },
-    ],
-  }
-}
-
-export function updateAction(s, id, patch) {
-  return { ...s, actions: s.actions.map(a => a.id === id ? { ...a, ...patch } : a) }
-}
-
-export function deleteAction(s, id) {
-  return { ...s, actions: s.actions.filter(a => a.id !== id) }
-}
-
-// ── Action edges (→ Event) ───────────────────────────────────────
-export function addActionEdge(s, actionId) {
-  return {
-    ...s,
-    actions: s.actions.map(a =>
-      a.id === actionId
-        ? { ...a, edges: [...a.edges, { id: newId(), toEventId: '', condition: null, effect: null }] }
-        : a
+    objects: s.objects.map(o =>
+      o.id === objectId
+        ? { ...o, actions: [...(o.actions || []), { id: newId(), name: 'action' }] }
+        : o
     ),
   }
 }
 
-export function updateActionEdge(s, actionId, edgeId, patch) {
+export function updateAction(s, objectId, actionId, patch) {
   return {
     ...s,
-    actions: s.actions.map(a =>
-      a.id === actionId
-        ? { ...a, edges: a.edges.map(e => e.id === edgeId ? { ...e, ...patch } : e) }
-        : a
+    objects: s.objects.map(o =>
+      o.id === objectId
+        ? { ...o, actions: (o.actions || []).map(a => a.id === actionId ? { ...a, ...patch } : a) }
+        : o
     ),
   }
 }
 
-export function deleteActionEdge(s, actionId, edgeId) {
+export function deleteAction(s, objectId, actionId) {
+  const loops = s.loops.map(loop => {
+    const removedNodeIds = new Set(
+      loop.nodes.filter(n => n.refType === 'action' && n.refId === actionId).map(n => n.id)
+    )
+    if (removedNodeIds.size === 0) return loop
+    const nodes = loop.nodes.filter(n => !removedNodeIds.has(n.id))
+    const edges = loop.edges.filter(e => !removedNodeIds.has(e.fromLoopNodeId) && !removedNodeIds.has(e.toLoopNodeId))
+    return { ...loop, nodes, edges }
+  })
+
   return {
     ...s,
-    actions: s.actions.map(a =>
-      a.id === actionId ? { ...a, edges: a.edges.filter(e => e.id !== edgeId) } : a
+    objects: s.objects.map(o =>
+      o.id === objectId ? { ...o, actions: (o.actions || []).filter(a => a.id !== actionId) } : o
+    ),
+    loops,
+  }
+}
+
+// ── Loops ────────────────────────────────────────────────────────
+export function addLoop(s) {
+  return { ...s, loops: [...s.loops, { id: newId(), name: 'New Loop', nodes: [], localEvents: [], edges: [] }] }
+}
+
+export function updateLoop(s, loopId, patch) {
+  return { ...s, loops: s.loops.map(l => l.id === loopId ? { ...l, ...patch } : l) }
+}
+
+export function deleteLoop(s, loopId) {
+  return { ...s, loops: s.loops.filter(l => l.id !== loopId) }
+}
+
+// ── Loop nodes ───────────────────────────────────────────────────
+export function addLoopNode(s, loopId, refType, refId) {
+  return {
+    ...s,
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, nodes: [...l.nodes, { id: newId(), refType, refId }] }
+        : l
     ),
   }
 }
 
-// ── Events ───────────────────────────────────────────────────────
-export function addEvent(s) {
-  return { ...s, events: [...s.events, { id: newId(), name: 'New Event', edges: [] }] }
-}
-
-export function updateEvent(s, id, patch) {
-  return { ...s, events: s.events.map(e => e.id === id ? { ...e, ...patch } : e) }
-}
-
-export function deleteEvent(s, id) {
-  const actions = s.actions.map(a => ({
-    ...a,
-    edges: a.edges.filter(e => e.toEventId !== id),
-  }))
-  const objectEventEdges = s.objectEventEdges.filter(e => e.toEventId !== id)
-  return { ...s, events: s.events.filter(e => e.id !== id), actions, objectEventEdges }
-}
-
-// ── Event edges (→ Object) ───────────────────────────────────────
-export function addEventEdge(s, eventId) {
+export function removeLoopNode(s, loopId, nodeId) {
   return {
     ...s,
-    events: s.events.map(e =>
-      e.id === eventId
-        ? { ...e, edges: [...e.edges, { id: newId(), toObjectId: '', condition: null, effect: null }] }
-        : e
+    loops: s.loops.map(l => {
+      if (l.id !== loopId) return l
+      const node = l.nodes.find(n => n.id === nodeId)
+      return {
+        ...l,
+        nodes: l.nodes.filter(n => n.id !== nodeId),
+        edges: l.edges.filter(e => e.fromLoopNodeId !== nodeId && e.toLoopNodeId !== nodeId),
+        localEvents: node?.refType === 'event'
+          ? l.localEvents.filter(e => e.id !== node.refId)
+          : l.localEvents,
+      }
+    }),
+  }
+}
+
+export function updateLoopNodePosition(s, loopId, nodeId, x, y) {
+  return {
+    ...s,
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, nodes: l.nodes.map(n => n.id === nodeId ? { ...n, x, y } : n) }
+        : l
     ),
   }
 }
 
-export function updateEventEdge(s, eventId, edgeId, patch) {
+// ── Local events ─────────────────────────────────────────────────
+export function addLocalEvent(s, loopId) {
+  const eventId = newId()
   return {
     ...s,
-    events: s.events.map(e =>
-      e.id === eventId
-        ? { ...e, edges: e.edges.map(ed => ed.id === edgeId ? { ...ed, ...patch } : ed) }
-        : e
+    loops: s.loops.map(l => {
+      if (l.id !== loopId) return l
+      return {
+        ...l,
+        localEvents: [...l.localEvents, { id: eventId, name: 'New Event' }],
+        nodes: [...l.nodes, { id: newId(), refType: 'event', refId: eventId }],
+      }
+    }),
+  }
+}
+
+export function updateLocalEvent(s, loopId, eventId, patch) {
+  return {
+    ...s,
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, localEvents: l.localEvents.map(e => e.id === eventId ? { ...e, ...patch } : e) }
+        : l
     ),
   }
 }
 
-export function deleteEventEdge(s, eventId, edgeId) {
+export function deleteLocalEvent(s, loopId, eventId) {
   return {
     ...s,
-    events: s.events.map(e =>
-      e.id === eventId ? { ...e, edges: e.edges.filter(ed => ed.id !== edgeId) } : e
+    loops: s.loops.map(l => {
+      if (l.id !== loopId) return l
+      const removedNodeIds = new Set(
+        l.nodes.filter(n => n.refType === 'event' && n.refId === eventId).map(n => n.id)
+      )
+      const nodes = l.nodes.filter(n => !removedNodeIds.has(n.id))
+      const edges = l.edges.filter(e => !removedNodeIds.has(e.fromLoopNodeId) && !removedNodeIds.has(e.toLoopNodeId))
+      return { ...l, localEvents: l.localEvents.filter(e => e.id !== eventId), nodes, edges }
+    }),
+  }
+}
+
+// ── Local actions ─────────────────────────────────────────────────
+export function addLocalAction(s, loopId, objectId) {
+  const actionId = newId()
+  return {
+    ...s,
+    objects: s.objects.map(o =>
+      o.id === objectId
+        ? { ...o, actions: [...(o.actions || []), { id: actionId, name: 'action' }] }
+        : o
+    ),
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, nodes: [...l.nodes, { id: newId(), refType: 'action', refId: actionId }] }
+        : l
     ),
   }
 }
 
-// ── Object → Event edges ─────────────────────────────────────────
-export function addObjectEventEdge(s, fromObjectId) {
+// ── Loop edges ───────────────────────────────────────────────────
+export function addLoopEdge(s, loopId, fromLoopNodeId = '') {
   return {
     ...s,
-    objectEventEdges: [
-      ...s.objectEventEdges,
-      { id: newId(), fromObjectId, toEventId: '', condition: null, effect: null },
-    ],
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, edges: [...l.edges, { id: newId(), fromLoopNodeId, toLoopNodeId: '', condition: null, effect: null }] }
+        : l
+    ),
   }
 }
 
-export function updateObjectEventEdge(s, id, patch) {
+export function updateLoopEdge(s, loopId, edgeId, patch) {
   return {
     ...s,
-    objectEventEdges: s.objectEventEdges.map(e => e.id === id ? { ...e, ...patch } : e),
+    loops: s.loops.map(l =>
+      l.id === loopId
+        ? { ...l, edges: l.edges.map(e => e.id === edgeId ? { ...e, ...patch } : e) }
+        : l
+    ),
   }
 }
 
-export function deleteObjectEventEdge(s, id) {
+export function deleteLoopEdge(s, loopId, edgeId) {
   return {
     ...s,
-    objectEventEdges: s.objectEventEdges.filter(e => e.id !== id),
+    loops: s.loops.map(l =>
+      l.id === loopId ? { ...l, edges: l.edges.filter(e => e.id !== edgeId) } : l
+    ),
   }
 }

@@ -1,16 +1,21 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { loadState, saveState, updateObject, updateAction, updateEvent } from './store'
+import { useState, useCallback, useEffect } from 'react'
+import { loadState, saveState, updateLoopNodePosition } from './store'
 import Sidebar from './Sidebar'
 import GraphView from './GraphView'
 
 export default function App() {
   const [state, setState] = useState(() => loadState())
   const [selectedId, setSelectedId] = useState(null)
+  const [selectedLoopId, setSelectedLoopId] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [fitCounter, setFitCounter] = useState(0)
-  const panToRef = useRef({ id: null, seq: 0 })
   const [panTo, setPanTo] = useState({ id: null, seq: 0 })
-  const graphIsolationRef = useRef(null)
+
+  // Auto-select first loop when selected loop becomes invalid
+  useEffect(() => {
+    if (selectedLoopId && state.loops.some(l => l.id === selectedLoopId)) return
+    setSelectedLoopId(state.loops[0]?.id ?? null)
+  }, [state.loops, selectedLoopId])
 
   const mutate = useCallback((fn, ...args) => {
     setState(prev => {
@@ -20,21 +25,26 @@ export default function App() {
     })
   }, [])
 
-  // Shared import handler — used by both file picker and drag-and-drop
   const handleImport = useCallback((parsed) => {
-    if (!parsed.objects || !parsed.events) { alert('Invalid schema file.'); return }
+    if (!parsed.objects || !parsed.loops) { alert('Invalid schema file.'); return }
     setState(parsed)
     saveState(parsed)
+    setSelectedLoopId(parsed.loops[0]?.id ?? null)
+    setSelectedId(null)
     setFitCounter(c => c + 1)
   }, [])
 
-  const handlePositionChange = useCallback((id, kind, x, y) => {
-    if (kind === 'object') mutate(updateObject, id, { x, y })
-    else if (kind === 'action') mutate(updateAction, id, { x, y })
-    else if (kind === 'event') mutate(updateEvent, id, { x, y })
-  }, [mutate])
+  const handleLoopNodePositionChange = useCallback((nodeId, x, y) => {
+    mutate(updateLoopNodePosition, selectedLoopId, nodeId, x, y)
+  }, [mutate, selectedLoopId])
 
-  // Graph node clicked — highlight + scroll sidebar, no pan
+  const handleLoopSelect = useCallback((loopId) => {
+    setSelectedLoopId(loopId)
+    setSelectedId(null)
+    setFitCounter(c => c + 1)
+  }, [])
+
+  // Graph node clicked — highlight + scroll sidebar to loop-node row
   const handleGraphSelect = useCallback(id => {
     setSelectedId(id)
     setTimeout(() => {
@@ -43,7 +53,7 @@ export default function App() {
     }, 50)
   }, [])
 
-  // Sidebar entity clicked — highlight + pan graph to node
+  // Sidebar loop-node clicked — highlight + pan graph to node
   const handleSidebarSelect = useCallback(id => {
     setSelectedId(id)
     setPanTo(prev => ({ id, seq: prev.seq + 1 }))
@@ -85,17 +95,17 @@ export default function App() {
         onSelect={handleSidebarSelect}
         onClearSelect={() => setSelectedId(null)}
         onImport={handleImport}
-        onIsolate={nodeIds => graphIsolationRef.current?.applyIsolation(nodeIds)}
-        onClearIsolation={() => graphIsolationRef.current?.clearIsolation()}
+        selectedLoopId={selectedLoopId}
+        onLoopSelect={handleLoopSelect}
       />
       <GraphView
         state={state}
+        selectedLoopId={selectedLoopId}
         selectedId={selectedId}
-        onSelectEntity={handleGraphSelect}
-        onPositionChange={handlePositionChange}
+        onSelectLoopNode={handleGraphSelect}
+        onPositionChange={handleLoopNodePositionChange}
         fitCounter={fitCounter}
         panTo={panTo}
-        isolationRef={graphIsolationRef}
       />
     </div>
   )

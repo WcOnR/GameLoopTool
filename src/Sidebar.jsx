@@ -3,22 +3,34 @@ import * as S from './store'
 
 const OPERATORS = ['<', '<=', '>', '>=', '=', '!=']
 
-function computeIsolationIds(action, state) {
-  const ids = new Set([action.objectId, action.id])
-  for (const edge of action.edges) {
-    if (!edge.toEventId) continue
-    ids.add(edge.toEventId)
-    const evt = state.events.find(e => e.id === edge.toEventId)
-    if (evt) {
-      for (const evtEdge of evt.edges) {
-        if (evtEdge.toObjectId) ids.add(evtEdge.toObjectId)
-      }
-    }
+function loopNodeLabel(node, state, loop) {
+  if (node.refType === 'object') {
+    const obj = state.objects.find(o => o.id === node.refId)
+    return { text: obj?.name ?? '?', badge: 'OBJ' }
   }
-  return [...ids]
+  if (node.refType === 'action') {
+    for (const obj of state.objects) {
+      const action = (obj.actions || []).find(a => a.id === node.refId)
+      if (action) return { text: `${obj.name}: ${action.name}`, badge: 'ACT' }
+    }
+    return { text: '?', badge: 'ACT' }
+  }
+  if (node.refType === 'event') {
+    const evt = (loop.localEvents || []).find(e => e.id === node.refId)
+    return { text: evt?.name ?? '?', badge: 'EVT' }
+  }
+  return { text: '?', badge: '?' }
 }
 
-// ── Shared: Effect fields ────────────────────────────────────────
+function disambiguateLabel(node, nodes, state, loop) {
+  const { text } = loopNodeLabel(node, state, loop)
+  const sameRef = nodes.filter(n => n.refId === node.refId)
+  if (sameRef.length <= 1) return text
+  const idx = sameRef.findIndex(n => n.id === node.id)
+  return `${text} (${idx + 1})`
+}
+
+// ── Effect fields ────────────────────────────────────────────────
 function EffectFields({ effect, state, onChange }) {
   const setF = (field, val) => onChange({ ...(effect || {}), [field]: val })
   const selectedObj = state.objects.find(o => o.id === effect?.targetObjectId)
@@ -53,7 +65,7 @@ function EffectFields({ effect, state, onChange }) {
   )
 }
 
-// ── Shared: Condition fields ─────────────────────────────────────
+// ── Condition fields ─────────────────────────────────────────────
 function ConditionFields({ condition, state, onChange }) {
   const setF = (field, val) => onChange({ ...(condition || { operator: '<', value: 0 }), [field]: val })
   const selectedObj = state.objects.find(o => o.id === condition?.objectId)
@@ -92,7 +104,7 @@ function ConditionFields({ condition, state, onChange }) {
   )
 }
 
-// ── Generic edge block (collapsible) ────────────────────────────
+// ── Edge block (collapsible) ─────────────────────────────────────
 function EdgeBlock({ label, onDelete, children }) {
   const [open, setOpen] = useState(true)
   return (
@@ -107,126 +119,238 @@ function EdgeBlock({ label, onDelete, children }) {
   )
 }
 
-// ── Action edge row (→ Event) ────────────────────────────────────
-function ActionEdgeRow({ edge, state, actionId, mutate }) {
-  const evt = state.events.find(e => e.id === edge.toEventId)
-  const label = evt ? `→ ${evt.name}` : '→ ?'
+// ── Node edge row (outgoing edge, source node is implicit) ───────
+function NodeEdgeRow({ edge, loop, state, loopId, mutate }) {
+  const toNode = loop.nodes.find(n => n.id === edge.toLoopNodeId)
+  const toLabel = toNode ? disambiguateLabel(toNode, loop.nodes, state, loop) : '?'
+
   return (
-    <EdgeBlock label={label} onDelete={() => mutate(S.deleteActionEdge, actionId, edge.id)}>
+    <EdgeBlock label={`→ ${toLabel}`} onDelete={() => mutate(S.deleteLoopEdge, loopId, edge.id)}>
       <div className="field-row">
-        <span className="field-label">→ Event</span>
-        <select className="inp flex1" value={edge.toEventId || ''}
-          onChange={e => mutate(S.updateActionEdge, actionId, edge.id, { toEventId: e.target.value })}>
-          <option value="">-- event --</option>
-          {state.events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-        </select>
-      </div>
-      <div className="subsection-label">Effect</div>
-      <EffectFields effect={edge.effect} state={state}
-        onChange={eff => mutate(S.updateActionEdge, actionId, edge.id, { effect: eff })} />
-      <div className="subsection-label">Condition</div>
-      <ConditionFields condition={edge.condition} state={state}
-        onChange={cond => mutate(S.updateActionEdge, actionId, edge.id, { condition: cond })} />
-    </EdgeBlock>
-  )
-}
-
-// ── Event edge row (→ Object) ────────────────────────────────────
-function EventEdgeRow({ edge, state, eventId, mutate }) {
-  const obj = state.objects.find(o => o.id === edge.toObjectId)
-  const label = obj ? `→ ${obj.name}` : '→ ?'
-  return (
-    <EdgeBlock label={label} onDelete={() => mutate(S.deleteEventEdge, eventId, edge.id)}>
-      <div className="field-row">
-        <span className="field-label">→ Object</span>
-        <select className="inp flex1" value={edge.toObjectId || ''}
-          onChange={e => mutate(S.updateEventEdge, eventId, edge.id, { toObjectId: e.target.value })}>
-          <option value="">-- object --</option>
-          {state.objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-      </div>
-      <div className="subsection-label">Effect</div>
-      <EffectFields effect={edge.effect} state={state}
-        onChange={eff => mutate(S.updateEventEdge, eventId, edge.id, { effect: eff })} />
-      <div className="subsection-label">Condition</div>
-      <ConditionFields condition={edge.condition} state={state}
-        onChange={cond => mutate(S.updateEventEdge, eventId, edge.id, { condition: cond })} />
-    </EdgeBlock>
-  )
-}
-
-// ── Object→Event edge row ────────────────────────────────────────
-function ObjectEventEdgeRow({ edge, state, mutate }) {
-  const evt = state.events.find(e => e.id === edge.toEventId)
-  const label = evt ? `→ ${evt.name}` : '→ ?'
-  return (
-    <EdgeBlock label={label} onDelete={() => mutate(S.deleteObjectEventEdge, edge.id)}>
-      <div className="field-row">
-        <span className="field-label">→ Event</span>
-        <select className="inp flex1" value={edge.toEventId || ''}
-          onChange={e => mutate(S.updateObjectEventEdge, edge.id, { toEventId: e.target.value })}>
-          <option value="">-- event --</option>
-          {state.events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-        </select>
-      </div>
-      <div className="subsection-label">Effect</div>
-      <EffectFields effect={edge.effect} state={state}
-        onChange={eff => mutate(S.updateObjectEventEdge, edge.id, { effect: eff })} />
-      <div className="subsection-label">Condition</div>
-      <ConditionFields condition={edge.condition} state={state}
-        onChange={cond => mutate(S.updateObjectEventEdge, edge.id, { condition: cond })} />
-    </EdgeBlock>
-  )
-}
-
-// ── Action block ─────────────────────────────────────────────────
-function ActionBlock({ action, state, mutate, onIsolateAction, activeIsolationId, selectedId }) {
-  const [open, setOpen] = useState(false)
-  const isIsolated = activeIsolationId === action.id
-  useEffect(() => { if (selectedId === action.id) setOpen(true) }, [selectedId, action.id])
-  return (
-    <div className="action-block" data-entity-id={action.id}>
-      <div className="action-header" onClick={() => setOpen(o => !o)}>
-        <span className="chevron" style={{ transform: open ? 'rotate(90deg)' : '' }}>▶</span>
-        <input className="inp flex1" value={action.name}
-          onClick={e => e.stopPropagation()}
-          onChange={e => mutate(S.updateAction, action.id, { name: e.target.value })}
-          placeholder="action name" />
-        <button
-          onClick={e => { e.stopPropagation(); onIsolateAction(action.id, computeIsolationIds(action, state)) }}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', fontSize: 14, opacity: isIsolated ? 1 : 0.4, color: isIsolated ? '#ffdd44' : '#fff' }}
-          title="Isolate">👁</button>
-        <button className="btn btn-icon-danger" onClick={e => { e.stopPropagation(); mutate(S.deleteAction, action.id) }}>✕</button>
-      </div>
-      {open && (
-        <div className="action-body">
-          <div className="subsection-label">OWNER EFFECT</div>
-          <EffectFields effect={action.effect} state={state}
-            onChange={eff => mutate(S.updateAction, action.id, { effect: eff })} />
-          <div className="subsection-label">CONDITION</div>
-          <ConditionFields condition={action.condition} state={state}
-            onChange={cond => mutate(S.updateAction, action.id, { condition: cond })} />
-          <button className="btn btn-sm" style={{ marginTop: 4 }}
-            onClick={() => mutate(S.updateAction, action.id, { effect: null, condition: null })}>
-            Clear effect &amp; condition
-          </button>
-
-          <div className="subsection-label" style={{ marginTop: 8 }}>EDGES → Events</div>
-          {action.edges.map(edge => (
-            <ActionEdgeRow key={edge.id} edge={edge} state={state} actionId={action.id} mutate={mutate} />
+        <span className="field-label">To</span>
+        <select className="inp flex1" value={edge.toLoopNodeId || ''}
+          onChange={e => mutate(S.updateLoopEdge, loopId, edge.id, { toLoopNodeId: e.target.value })}>
+          <option value="">-- node --</option>
+          {loop.nodes.map(n => (
+            <option key={n.id} value={n.id}>{disambiguateLabel(n, loop.nodes, state, loop)}</option>
           ))}
-          <button className="btn btn-add" onClick={() => mutate(S.addActionEdge, action.id)}>+ Add Edge</button>
-        </div>
+        </select>
+      </div>
+      <div className="subsection-label">Effect</div>
+      <EffectFields effect={edge.effect} state={state}
+        onChange={eff => mutate(S.updateLoopEdge, loopId, edge.id, { effect: eff })} />
+      <div className="subsection-label">Condition</div>
+      <ConditionFields condition={edge.condition} state={state}
+        onChange={cond => mutate(S.updateLoopEdge, loopId, edge.id, { condition: cond })} />
+    </EdgeBlock>
+  )
+}
+
+// ── Node picker popover ──────────────────────────────────────────
+function NodePicker({ state, onPick, onClose }) {
+  const allActions = state.objects.flatMap(obj =>
+    (obj.actions || []).map(action => ({ objectName: obj.name, action }))
+  )
+  return (
+    <div className="node-picker">
+      {state.objects.length > 0 && (
+        <>
+          <div className="node-picker-section-label">Objects</div>
+          {state.objects.map(obj => (
+            <button key={obj.id} className="node-picker-item"
+              onClick={() => { onPick('object', obj.id); onClose() }}>
+              <span className="loop-node-badge badge-object">OBJ</span>
+              <span>{obj.name}</span>
+            </button>
+          ))}
+        </>
+      )}
+      {allActions.length > 0 && (
+        <>
+          <div className="node-picker-section-label">Actions</div>
+          {allActions.map(({ objectName, action }) => (
+            <button key={action.id} className="node-picker-item"
+              onClick={() => { onPick('action', action.id); onClose() }}>
+              <span className="loop-node-badge badge-action">ACT</span>
+              <span>{objectName}: {action.name}</span>
+            </button>
+          ))}
+        </>
+      )}
+      {state.objects.length === 0 && allActions.length === 0 && (
+        <div className="node-picker-empty">No objects or actions yet</div>
       )}
     </div>
   )
 }
 
-// ── Object block ─────────────────────────────────────────────────
-function ObjectBlock({ obj, state, mutate, isOpen, onToggle, onIsolateAction, activeIsolationId, selectedId }) {
-  const actions = state.actions.filter(a => a.objectId === obj.id)
-  const objEventEdges = state.objectEventEdges.filter(e => e.fromObjectId === obj.id)
+// ── Local action picker ──────────────────────────────────────────
+function LocalActionPicker({ state, onPick, onClose }) {
+  return (
+    <div className="node-picker">
+      {state.objects.length === 0 ? (
+        <div className="node-picker-empty">No objects yet</div>
+      ) : (
+        <>
+          <div className="node-picker-section-label">Pick an object</div>
+          {state.objects.map(obj => (
+            <button key={obj.id} className="node-picker-item"
+              onClick={() => { onPick(obj.id); onClose() }}>
+              <span className="loop-node-badge badge-object">OBJ</span>
+              <span>{obj.name}</span>
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
 
+// ── Loop panel ───────────────────────────────────────────────────
+function LoopPanel({ loop, state, mutate, selectedId, onSelect }) {
+  const [showPicker, setShowPicker] = useState(false)
+  const [showActionPicker, setShowActionPicker] = useState(false)
+  const [expandedNodeIds, setExpandedNodeIds] = useState(new Set())
+  const pickerWrapRef = useRef(null)
+  const actionPickerWrapRef = useRef(null)
+  const loopId = loop.id
+
+  useEffect(() => {
+    if (!showPicker) return
+    const handler = e => {
+      if (pickerWrapRef.current && !pickerWrapRef.current.contains(e.target)) setShowPicker(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showPicker])
+
+  useEffect(() => {
+    if (!showActionPicker) return
+    const handler = e => {
+      if (actionPickerWrapRef.current && !actionPickerWrapRef.current.contains(e.target)) setShowActionPicker(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showActionPicker])
+
+  const toggleNode = (nodeId) => {
+    setExpandedNodeIds(prev => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) next.delete(nodeId)
+      else next.add(nodeId)
+      return next
+    })
+  }
+
+  return (
+    <div className="loop-panel">
+      <div className="loop-panel-actions">
+        <div style={{ position: 'relative' }} ref={pickerWrapRef}>
+          <button className="btn btn-add" onClick={() => setShowPicker(v => !v)}>+ Add node</button>
+          {showPicker && (
+            <NodePicker
+              state={state}
+              onPick={(refType, refId) => mutate(S.addLoopNode, loopId, refType, refId)}
+              onClose={() => setShowPicker(false)}
+            />
+          )}
+        </div>
+        <button className="btn btn-add" onClick={() => mutate(S.addLocalEvent, loopId)}>+ Add event</button>
+        <div style={{ position: 'relative' }} ref={actionPickerWrapRef}>
+          <button className="btn btn-add" onClick={() => setShowActionPicker(v => !v)}>+ Add local action</button>
+          {showActionPicker && (
+            <LocalActionPicker
+              state={state}
+              onPick={(objectId) => mutate(S.addLocalAction, loopId, objectId)}
+              onClose={() => setShowActionPicker(false)}
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="subsection-label" style={{ marginTop: 6 }}>NODES</div>
+      {loop.nodes.length === 0 && (
+        <div style={{ color: '#4a5a80', fontSize: 11, padding: '2px 0 4px' }}>No nodes yet</div>
+      )}
+      {loop.nodes.map(node => {
+        const { badge } = loopNodeLabel(node, state, loop)
+        const label = disambiguateLabel(node, loop.nodes, state, loop)
+        const isSelected = selectedId === node.id
+        const isExpanded = expandedNodeIds.has(node.id)
+        const outgoingEdges = loop.edges.filter(e => e.fromLoopNodeId === node.id)
+
+        let nameEl
+        if (node.refType === 'event') {
+          const evt = loop.localEvents.find(e => e.id === node.refId)
+          nameEl = evt
+            ? <input className="inp flex1 loop-node-name-inp" value={evt.name}
+                onClick={e => e.stopPropagation()}
+                onChange={e => mutate(S.updateLocalEvent, loopId, evt.id, { name: e.target.value })}
+                placeholder="event name" />
+            : <span className="loop-node-label">{label}</span>
+        } else if (node.refType === 'action') {
+          let foundObj = null, foundAction = null
+          for (const obj of state.objects) {
+            const a = (obj.actions || []).find(a => a.id === node.refId)
+            if (a) { foundObj = obj; foundAction = a; break }
+          }
+          nameEl = foundAction
+            ? <><span className="loop-node-obj-prefix">{foundObj.name}:</span>
+                <input className="inp flex1 loop-node-name-inp" value={foundAction.name}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => mutate(S.updateAction, foundObj.id, foundAction.id, { name: e.target.value })}
+                  placeholder="action name" /></>
+            : <span className="loop-node-label">{label}</span>
+        } else {
+          nameEl = <span className="loop-node-label">{label}</span>
+        }
+
+        return (
+          <div key={node.id} className="loop-node-block" data-entity-id={node.id}>
+            <div
+              className={`loop-node-row${isSelected ? ' selected' : ''}`}
+              onClick={() => onSelect(node.id)}>
+              <span className="chevron" style={{ transform: isExpanded ? 'rotate(90deg)' : '' }}
+                onClick={e => { e.stopPropagation(); toggleNode(node.id) }}>▶</span>
+              <span className={`loop-node-badge badge-${node.refType}`}>{badge}</span>
+              {nameEl}
+              <button className="btn btn-icon-danger"
+                onClick={e => { e.stopPropagation(); mutate(S.removeLoopNode, loopId, node.id) }}>✕</button>
+            </div>
+            {isExpanded && (
+              <div className="loop-node-edges">
+                {outgoingEdges.map(edge => (
+                  <NodeEdgeRow key={edge.id} edge={edge} loop={loop} state={state} loopId={loopId} mutate={mutate} />
+                ))}
+                <button className="btn btn-add" style={{ marginTop: 2 }}
+                  onClick={() => mutate(S.addLoopEdge, loopId, node.id)}>+ Add Edge</button>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+    </div>
+  )
+}
+
+// ── Action block (simplified — just name) ────────────────────────
+function ActionBlock({ action, objectId, mutate }) {
+  return (
+    <div className="action-block">
+      <div className="action-header">
+        <input className="inp flex1" value={action.name}
+          onChange={e => mutate(S.updateAction, objectId, action.id, { name: e.target.value })}
+          placeholder="action name" />
+        <button className="btn btn-icon-danger"
+          onClick={() => mutate(S.deleteAction, objectId, action.id)}>✕</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Object block ─────────────────────────────────────────────────
+function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
   return (
     <div className="entity-block" data-entity-id={obj.id}>
       <div className="entity-header">
@@ -257,40 +381,10 @@ function ObjectBlock({ obj, state, mutate, isOpen, onToggle, onIsolateAction, ac
           <button className="btn btn-add" onClick={() => mutate(S.addAttr, obj.id)}>+ Add Attribute</button>
 
           <div className="subsection-label" style={{ marginTop: 8 }}>ACTIONS</div>
-          {actions.map(action => (
-            <ActionBlock key={action.id} action={action} state={state} mutate={mutate} onIsolateAction={onIsolateAction} activeIsolationId={activeIsolationId} selectedId={selectedId} />
+          {(obj.actions || []).map(action => (
+            <ActionBlock key={action.id} action={action} objectId={obj.id} mutate={mutate} />
           ))}
           <button className="btn btn-add" onClick={() => mutate(S.addAction, obj.id)}>+ Add Action</button>
-
-          <div className="subsection-label" style={{ marginTop: 8 }}>EVENT CONNECTIONS</div>
-          {objEventEdges.map(edge => (
-            <ObjectEventEdgeRow key={edge.id} edge={edge} state={state} mutate={mutate} />
-          ))}
-          <button className="btn btn-add" onClick={() => mutate(S.addObjectEventEdge, obj.id)}>+ Add Connection</button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Event block ──────────────────────────────────────────────────
-function EventBlock({ evt, state, mutate, isOpen, onToggle }) {
-  return (
-    <div className="entity-block" data-entity-id={evt.id}>
-      <div className="entity-header">
-        <span className="chevron" style={{ transform: isOpen ? 'rotate(90deg)' : '' }} onClick={onToggle}>▶</span>
-        <input className="inp flex1 name-input" value={evt.name}
-          onChange={e => mutate(S.updateEvent, evt.id, { name: e.target.value })}
-          placeholder="event name" />
-        <button className="btn btn-danger-sm" onClick={() => mutate(S.deleteEvent, evt.id)}>Delete</button>
-      </div>
-      {isOpen && (
-        <div className="entity-body">
-          <div className="subsection-label">EDGES → Objects</div>
-          {evt.edges.map(edge => (
-            <EventEdgeRow key={edge.id} edge={edge} state={state} eventId={evt.id} mutate={mutate} />
-          ))}
-          <button className="btn btn-add" onClick={() => mutate(S.addEventEdge, evt.id)}>+ Add Edge</button>
         </div>
       )}
     </div>
@@ -298,36 +392,16 @@ function EventBlock({ evt, state, mutate, isOpen, onToggle }) {
 }
 
 // ── Main Sidebar ─────────────────────────────────────────────────
-export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect, onImport, onIsolate, onClearIsolation }) {
+export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSelect, onImport, selectedLoopId, onLoopSelect }) {
+  const [activeTab, setActiveTab] = useState('objects')
   const [openIds, setOpenIds] = useState(new Set())
-  const [activeIsolationId, setActiveIsolationId] = useState(null)
   const fileInputRef = useRef(null)
-
-  const handleIsolateAction = (actionId, nodeIds) => {
-    if (activeIsolationId === actionId) {
-      setActiveIsolationId(null)
-      onClearIsolation()
-    } else {
-      setActiveIsolationId(actionId)
-      onIsolate(nodeIds)
-    }
-  }
-
-  useEffect(() => {
-    if (!selectedId) return
-    setOpenIds(prev => {
-      const next = new Set([...prev, selectedId])
-      const action = state.actions.find(a => a.id === selectedId)
-      if (action) next.add(action.objectId)
-      return next
-    })
-  }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = id => {
     setOpenIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) { next.delete(id); onClearSelect() }
-      else { next.add(id); onSelect(id) }
+      else next.add(id)
       return next
     })
   }
@@ -349,6 +423,8 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
     reader.readAsText(file)
   }
 
+  const selectedLoop = state.loops.find(l => l.id === selectedLoopId)
+
   return (
     <div className="sidebar">
       <div className="sidebar-actions">
@@ -358,34 +434,67 @@ export default function Sidebar({ state, mutate, selectedId, onSelect, onClearSe
           onChange={e => { if (e.target.files[0]) handleImportFile(e.target.files[0]); e.target.value = '' }} />
       </div>
 
+      <div className="sidebar-tabs">
+        <button className={`tab-btn${activeTab === 'objects' ? ' active' : ''}`}
+          onClick={() => setActiveTab('objects')}>Objects</button>
+        <button className={`tab-btn${activeTab === 'loops' ? ' active' : ''}`}
+          onClick={() => setActiveTab('loops')}>Loops</button>
+      </div>
+
       <div className="sidebar-body">
-        <div className="section-header">
-          <span>OBJECTS</span>
-          <button className="btn btn-add-inline" onClick={() => {
-            const id = S.newId()
-            mutate(s => ({ ...s, objects: [...s.objects, { id, name: 'New Object', attrs: [] }] }))
-            setOpenIds(prev => new Set([...prev, id]))
-          }}>+ Add Object</button>
-        </div>
+        {activeTab === 'objects' ? (
+          <>
+            <div className="section-header">
+              <span>OBJECTS</span>
+              <button className="btn btn-add-inline" onClick={() => {
+                const id = S.newId()
+                mutate(s => ({ ...s, objects: [...s.objects, { id, name: 'New Object', attrs: [], actions: [] }] }))
+                setOpenIds(prev => new Set([...prev, id]))
+              }}>+ Add Object</button>
+            </div>
+            {state.objects.map(obj => (
+              <ObjectBlock key={obj.id} obj={obj} state={state} mutate={mutate}
+                isOpen={openIds.has(obj.id)} onToggle={() => toggle(obj.id)} />
+            ))}
+          </>
+        ) : (
+          <>
+            <div className="loop-pills-bar">
+              {state.loops.map(loop => (
+                <div key={loop.id}
+                  className={`loop-pill${loop.id === selectedLoopId ? ' active' : ''}`}
+                  onClick={() => onLoopSelect(loop.id)}>
+                  <input className="inp loop-pill-name" value={loop.name}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => mutate(S.updateLoop, loop.id, { name: e.target.value })}
+                    title={loop.name} />
+                  <button className="btn btn-icon-danger"
+                    onClick={e => { e.stopPropagation(); mutate(S.deleteLoop, loop.id) }}>✕</button>
+                </div>
+              ))}
+              <button className="btn btn-add loop-add-btn" onClick={() => {
+                const id = S.newId()
+                mutate(s => ({ ...s, loops: [...s.loops, { id, name: 'New Loop', nodes: [], localEvents: [], edges: [] }] }))
+                onLoopSelect(id)
+              }}>+ Add Loop</button>
+            </div>
 
-        {state.objects.map(obj => (
-          <ObjectBlock key={obj.id} obj={obj} state={state} mutate={mutate}
-            isOpen={openIds.has(obj.id)} onToggle={() => toggle(obj.id)} onIsolateAction={handleIsolateAction} activeIsolationId={activeIsolationId} selectedId={selectedId} />
-        ))}
-
-        <div className="section-header" style={{ marginTop: 8 }}>
-          <span>EVENTS</span>
-          <button className="btn btn-add-inline" onClick={() => {
-            const id = S.newId()
-            mutate(s => ({ ...s, events: [...s.events, { id, name: 'New Event', edges: [] }] }))
-            setOpenIds(prev => new Set([...prev, id]))
-          }}>+ Add Event</button>
-        </div>
-
-        {state.events.map(evt => (
-          <EventBlock key={evt.id} evt={evt} state={state} mutate={mutate}
-            isOpen={openIds.has(evt.id)} onToggle={() => toggle(evt.id)} />
-        ))}
+            {selectedLoop ? (
+              <LoopPanel
+                key={selectedLoop.id}
+                loop={selectedLoop}
+                state={state}
+                mutate={mutate}
+                selectedId={selectedId}
+                onSelect={onSelect}
+              />
+            ) : (
+              <div style={{ color: '#4a5a80', padding: '12px 10px', fontSize: 12 }}>
+                {state.loops.length === 0 ? 'No loops yet. Create one above.' : 'Select a loop above.'}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )

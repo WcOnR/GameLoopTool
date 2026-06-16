@@ -29,7 +29,6 @@ function nodeSize(label) {
   return { w, h }
 }
 
-// Build edge label from optional effect + condition
 function edgeLabel(edge, state) {
   const effectPart = (() => {
     if (!edge.effect?.targetObjectId) return ''
@@ -51,78 +50,50 @@ function edgeLabel(edge, state) {
   return effectPart || condPart
 }
 
-function buildElements(state) {
-  const nodes = []
-  const edges = []
-
-  for (const obj of state.objects) {
+function getNodeLabel(node, state, loop) {
+  if (node.refType === 'object') {
+    const obj = state.objects.find(o => o.id === node.refId)
+    if (!obj) return '?'
     const attrLines = obj.attrs.map(a => `${a.name}: ${a.value}`).join('\n')
-    const label = obj.name + (attrLines ? '\n' + attrLines : '')
+    return obj.name + (attrLines ? '\n' + attrLines : '')
+  }
+  if (node.refType === 'action') {
+    for (const obj of state.objects) {
+      const action = (obj.actions || []).find(a => a.id === node.refId)
+      if (action) return `${obj.name}: ${action.name}`
+    }
+    return '?'
+  }
+  if (node.refType === 'event') {
+    const evt = (loop.localEvents || []).find(e => e.id === node.refId)
+    return evt?.name ?? '?'
+  }
+  return '?'
+}
+
+function buildElements(loop, state) {
+  if (!loop) return { nodes: [], edges: [] }
+
+  const nodes = []
+  for (const node of loop.nodes) {
+    const label = getNodeLabel(node, state, loop)
     const { w, h } = nodeSize(label)
     const el = {
-      data: { id: obj.id, label, kind: 'object', entityId: obj.id },
+      data: { id: node.id, label, kind: node.refType, entityId: node.refId },
       style: { width: w, height: h, 'text-max-width': w - 16 },
     }
-    if (obj.x !== undefined && obj.y !== undefined) el.position = { x: obj.x, y: obj.y }
+    if (node.x !== undefined && node.y !== undefined) el.position = { x: node.x, y: node.y }
     nodes.push(el)
-  }
-
-  for (const action of state.actions) {
-    const { w, h } = nodeSize(action.name)
-    const el = {
-      data: { id: action.id, label: action.name, kind: 'action', entityId: action.id },
-      style: { width: w, height: h, 'text-max-width': w - 16 },
-    }
-    if (action.x !== undefined && action.y !== undefined) el.position = { x: action.x, y: action.y }
-    nodes.push(el)
-
-    // Object → Action
-    edges.push({
-      data: {
-        id: `oa-${action.id}`,
-        source: action.objectId,
-        target: action.id,
-        label: edgeLabel({ effect: action.effect, condition: action.condition }, state),
-      },
-    })
-
-    // Action → Event
-    for (const edge of action.edges) {
-      if (!edge.toEventId) continue
-      edges.push({
-        data: { id: `ae-${edge.id}`, source: action.id, target: edge.toEventId, label: edgeLabel(edge, state) },
-      })
-    }
-  }
-
-  for (const evt of state.events) {
-    const { w, h } = nodeSize(evt.name)
-    const el = {
-      data: { id: evt.id, label: evt.name, kind: 'event', entityId: evt.id },
-      style: { width: w, height: h, 'text-max-width': w - 16 },
-    }
-    if (evt.x !== undefined && evt.y !== undefined) el.position = { x: evt.x, y: evt.y }
-    nodes.push(el)
-
-    // Event → Object
-    for (const edge of evt.edges) {
-      if (!edge.toObjectId) continue
-      edges.push({
-        data: { id: `eo-${edge.id}`, source: evt.id, target: edge.toObjectId, label: edgeLabel(edge, state) },
-      })
-    }
-  }
-
-  // Object → Event (objectEventEdges)
-  for (const edge of state.objectEventEdges) {
-    if (!edge.fromObjectId || !edge.toEventId) continue
-    edges.push({
-      data: { id: `oee-${edge.id}`, source: edge.fromObjectId, target: edge.toEventId, label: edgeLabel(edge, state) },
-    })
   }
 
   const nodeIds = new Set(nodes.map(n => n.data.id))
-  return { nodes, edges: edges.filter(e => nodeIds.has(e.data.source) && nodeIds.has(e.data.target)) }
+  const edges = loop.edges
+    .filter(e => e.fromLoopNodeId && e.toLoopNodeId && nodeIds.has(e.fromLoopNodeId) && nodeIds.has(e.toLoopNodeId))
+    .map(e => ({
+      data: { id: e.id, source: e.fromLoopNodeId, target: e.toLoopNodeId, label: edgeLabel(e, state) },
+    }))
+
+  return { nodes, edges }
 }
 
 const STYLE = [
@@ -163,42 +134,11 @@ const STYLE = [
   },
 ]
 
-export default function GraphView({ state, selectedId, onSelectEntity, onPositionChange, fitCounter, panTo, isolationRef }) {
+export default function GraphView({ state, selectedLoopId, selectedId, onSelectLoopNode, onPositionChange, fitCounter, panTo }) {
   const containerRef = useRef(null)
   const cyRef = useRef(null)
   const onPositionChangeRef = useRef(onPositionChange)
-  const isolatedNodeIdsRef = useRef(null)
   useEffect(() => { onPositionChangeRef.current = onPositionChange }, [onPositionChange])
-
-  const reapplyIsolation = (cy) => {
-    const nodeIds = isolatedNodeIdsRef.current
-    if (!nodeIds) return
-    cy.elements().style({ opacity: 0.15 })
-    cy.elements().filter(el => nodeIds.includes(el.id())).style({ opacity: 1 })
-    cy.edges().filter(edge =>
-      nodeIds.includes(edge.source().id()) && nodeIds.includes(edge.target().id())
-    ).style({ opacity: 1 })
-    cy.nodes().filter(n => !nodeIds.includes(n.id())).ungrabify()
-  }
-
-  useEffect(() => {
-    if (!isolationRef) return
-    isolationRef.current = {
-      applyIsolation(nodeIds) {
-        const cy = cyRef.current
-        if (!cy) return
-        isolatedNodeIdsRef.current = nodeIds
-        reapplyIsolation(cy)
-      },
-      clearIsolation() {
-        const cy = cyRef.current
-        if (!cy) return
-        isolatedNodeIdsRef.current = null
-        cy.elements().style({ opacity: 1 })
-        cy.nodes().grabify()
-      },
-    }
-  }, [isolationRef]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -207,14 +147,12 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
       layout: { name: 'preset' }, userZoomingEnabled: true, userPanningEnabled: true, boxSelectionEnabled: false,
     })
     cy.on('tap', 'node', evt => {
-      const entityId = evt.target.data('entityId')
-      if (entityId) onSelectEntity(entityId)
+      onSelectLoopNode(evt.target.id())
     })
     cy.on('dragfree', 'node', evt => {
       const node = evt.target
       const { x, y } = node.position()
-      onPositionChangeRef.current(node.id(), node.data('kind'), x, y)
-      reapplyIsolation(cy)
+      onPositionChangeRef.current(node.id(), x, y)
     })
     cyRef.current = cy
     return () => { cy.destroy(); cyRef.current = null }
@@ -223,7 +161,9 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
   useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
-    const { nodes, edges } = buildElements(state)
+
+    const loop = state.loops.find(l => l.id === selectedLoopId)
+    const { nodes, edges } = buildElements(loop, state)
     cy.elements().remove()
     if (nodes.length === 0) return
 
@@ -238,17 +178,16 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
 
     cy.add([...nodes, ...edges])
     cy.layout({ name: 'preset', animate: false, fit: false }).run()
-    reapplyIsolation(cy)
 
     if (unpositioned.length > 0) {
       for (const node of unpositioned) {
-        onPositionChangeRef.current(node.data.id, node.data.kind, node.position.x, node.position.y)
+        onPositionChangeRef.current(node.data.id, node.position.x, node.position.y)
       }
       const newIds = new Set(unpositioned.map(n => n.data.id))
       const newCyNodes = cy.nodes().filter(n => newIds.has(n.id()))
       if (newCyNodes.length > 0) cy.animate({ center: { eles: newCyNodes }, duration: 300 })
     }
-  }, [state])
+  }, [state, selectedLoopId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!fitCounter) return
@@ -268,15 +207,20 @@ export default function GraphView({ state, selectedId, onSelectEntity, onPositio
     const cy = cyRef.current
     if (!cy) return
     cy.nodes().removeClass('highlighted')
-    if (selectedId) cy.nodes().filter(n => n.data('entityId') === selectedId).addClass('highlighted')
+    if (selectedId) cy.getElementById(selectedId).addClass('highlighted')
   }, [selectedId, state])
 
-  const isEmpty = state.objects.length === 0 && state.events.length === 0
+  const loop = state.loops.find(l => l.id === selectedLoopId)
+  const isEmpty = !loop || loop.nodes.length === 0
 
   return (
     <div className="graph-panel">
       <div id="cy" ref={containerRef} />
-      {isEmpty && <div className="graph-placeholder">Add an object or event to get started</div>}
+      {isEmpty && (
+        <div className="graph-placeholder">
+          {state.loops.length === 0 ? 'Create a loop to get started' : 'Add nodes to this loop'}
+        </div>
+      )}
     </div>
   )
 }
