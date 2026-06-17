@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import * as S from './store'
 
 const OPERATORS = ['<', '<=', '>', '>=', '=', '!=']
+const STRING_OPERATORS = ['=', '!=']
 
 function loopNodeLabel(node, state, loop) {
   if (node.refType === 'object') {
@@ -39,6 +40,8 @@ function disambiguateLabel(node, nodes, state, loop) {
 function EffectFields({ effect, state, onChange }) {
   const setF = (field, val) => onChange({ ...(effect || {}), [field]: val })
   const selectedObj = state.objects.find(o => o.id === effect?.targetObjectId)
+  const selectedAttr = selectedObj?.attrs.find(a => a.id === effect?.targetAttrId)
+  const attrType = selectedAttr?.type ?? 'number'
   return (
     <div className="sub-fields">
       <div className="field-row">
@@ -61,9 +64,14 @@ function EffectFields({ effect, state, onChange }) {
       )}
       {effect?.targetObjectId && (
         <div className="field-row">
-          <span className="field-label">Delta</span>
-          <input className="inp small" type="number" value={effect?.delta ?? ''}
-            onChange={e => setF('delta', e.target.value === '' ? 0 : Number(e.target.value))} />
+          <span className="field-label">{attrType === 'string' ? 'Value' : 'Delta'}</span>
+          {attrType === 'string' ? (
+            <input className="inp small" type="text" value={effect?.delta ?? ''}
+              onChange={e => setF('delta', e.target.value)} />
+          ) : (
+            <input className="inp small" type="number" value={effect?.delta ?? ''}
+              onChange={e => setF('delta', e.target.value === '' ? 0 : Number(e.target.value))} />
+          )}
         </div>
       )}
     </div>
@@ -72,8 +80,15 @@ function EffectFields({ effect, state, onChange }) {
 
 // ── Condition fields ─────────────────────────────────────────────
 function ConditionFields({ condition, state, onChange }) {
-  const setF = (field, val) => onChange({ ...(condition || { operator: '<', value: 0 }), [field]: val })
   const selectedObj = state.objects.find(o => o.id === condition?.objectId)
+  const selectedAttr = selectedObj?.attrs.find(a => a.id === condition?.attrId)
+  const attrType = selectedAttr?.type ?? 'number'
+  const operators = attrType === 'string' ? STRING_OPERATORS : OPERATORS
+  const setF = (field, val) => {
+    const defaults = attrType === 'string' ? { operator: '=', value: '' } : { operator: '<', value: 0 }
+    onChange({ ...defaults, ...(condition || {}), [field]: val })
+  }
+  const currentOperator = operators.includes(condition?.operator) ? condition.operator : operators[0]
   return (
     <div className="sub-fields">
       <div className="field-row">
@@ -96,12 +111,17 @@ function ConditionFields({ condition, state, onChange }) {
           </div>
           <div className="field-row">
             <span className="field-label">Op / Val</span>
-            <select className="inp" style={{ width: 52 }} value={condition?.operator || '<'}
+            <select className="inp" style={{ width: 52 }} value={currentOperator}
               onChange={e => setF('operator', e.target.value)}>
-              {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+              {operators.map(op => <option key={op} value={op}>{op}</option>)}
             </select>
-            <input className="inp small" type="number" value={condition?.value ?? 0}
-              onChange={e => setF('value', Number(e.target.value))} />
+            {attrType === 'string' ? (
+              <input className="inp small" type="text" value={condition?.value ?? ''}
+                onChange={e => setF('value', e.target.value)} />
+            ) : (
+              <input className="inp small" type="number" value={condition?.value ?? 0}
+                onChange={e => setF('value', Number(e.target.value))} />
+            )}
           </div>
         </>
       )}
@@ -414,7 +434,6 @@ function ObjectBlock({ obj, state, mutate, isOpen, onToggle }) {
                 onChange={e => mutate(S.updateAttr, obj.id, attr.id, { type: e.target.value })}>
                 <option value="number">number</option>
                 <option value="string">string</option>
-                <option value="object">object</option>
               </select>
               <input className="inp small" value={attr.value} placeholder="val"
                 onChange={e => mutate(S.updateAttr, obj.id, attr.id, { value: e.target.value })} />

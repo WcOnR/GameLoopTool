@@ -34,7 +34,10 @@ function edgeLabel(edge, state) {
     if (!edge.effect?.targetObjectId) return ''
     const obj = state.objects.find(o => o.id === edge.effect.targetObjectId)
     const attr = obj?.attrs.find(a => a.id === edge.effect.targetAttrId)
-    return obj && attr ? `[${obj.name}:${attr.name}] ${edge.effect.delta}` : ''
+    if (!obj || !attr) return ''
+    return attr.type === 'string'
+      ? `[${obj.name}:${attr.name}] = "${edge.effect.delta}"`
+      : `[${obj.name}:${attr.name}] ${edge.effect.delta}`
   })()
 
   const condPart = (() => {

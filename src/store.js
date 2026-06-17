@@ -3,8 +3,20 @@ const KEY = 'gameloop_v3'
 export const EMPTY = { objects: [], loops: [] }
 
 export function loadState() {
-  localStorage.clear()
-  return EMPTY
+  try {
+    const raw = localStorage.getItem(KEY)
+    if (!raw) return EMPTY
+    const saved = JSON.parse(raw)
+    return {
+      ...saved,
+      objects: (saved.objects || []).map(o => ({
+        ...o,
+        attrs: (o.attrs || []).map(a => a.type === 'object' ? { ...a, type: 'string' } : a),
+      })),
+    }
+  } catch {
+    return EMPTY
+  }
 }
 
 export function saveState(s) {
