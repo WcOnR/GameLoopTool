@@ -21,11 +21,15 @@ function findEmptySpot(existing) {
   return { x: cx + clearance * 2, y: cy }
 }
 
+const _measureCtx = document.createElement('canvas').getContext('2d')
+const NODE_FONT = '14px sans-serif'
+
 function nodeSize(label) {
+  _measureCtx.font = NODE_FONT
   const lines = label.split('\n')
-  const longest = Math.max(...lines.map(l => l.length))
-  const w = Math.max(80, longest * 4 + 4)
-  const h = Math.max(40, lines.length * 10 + 2)
+  const maxLineWidth = Math.max(...lines.map(line => _measureCtx.measureText(line).width))
+  const w = Math.max(80, maxLineWidth + 24)
+  const h = Math.max(40, lines.length * 22 + 16)
   return { w, h }
 }
 
@@ -112,7 +116,7 @@ const STYLE = [
     style: {
       shape: 'rectangle', 'background-color': '#4a6fa5', 'border-color': '#2d4f7c', 'border-width': 2,
       color: '#ddeeff', label: 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
-      'text-wrap': 'wrap', 'font-size': 11, padding: '10px', 'min-zoomed-font-size': 6,
+      'text-wrap': 'wrap', 'font-size': 14, padding: '10px', 'min-zoomed-font-size': 6,
     },
   },
   {
@@ -121,7 +125,7 @@ const STYLE = [
       shape: 'polygon', 'shape-polygon-points': '-0.75 -1 1 -1 0.75 1 -1 1',
       'background-color': '#2d8c6e', 'border-color': '#1a5c48', 'border-width': 2,
       color: '#ccffee', label: 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
-      'font-size': 11, padding: '8px', 'min-zoomed-font-size': 6,
+      'font-size': 14, padding: '8px', 'min-zoomed-font-size': 6,
     },
   },
   {
@@ -129,7 +133,7 @@ const STYLE = [
     style: {
       shape: 'roundrectangle', 'background-color': '#c47d1a', 'border-color': '#8a5510', 'border-width': 2,
       color: '#fff3cc', label: 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
-      'font-size': 11, padding: '8px', 'min-zoomed-font-size': 6,
+      'font-size': 14, padding: '8px', 'min-zoomed-font-size': 6,
     },
   },
   { selector: 'node.highlighted', style: { 'border-color': '#ffdd44', 'border-width': 3 } },
