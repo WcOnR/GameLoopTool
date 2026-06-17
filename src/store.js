@@ -46,9 +46,22 @@ export function loadState() {
         .filter(e => e.fromLoopNodeId !== e.toLoopNodeId)
         .filter(isValid)
         .map(edge => {
-          if (edge.condition === null) return edge
-          const toNode = nodes.find(n => n.id === edge.toLoopNodeId)
-          return toNode?.refType !== 'action' ? { ...edge, condition: null } : edge
+          // Clear condition on non-action targets (legacy migration)
+          let e = edge
+          if (e.condition != null) {
+            const toNode = nodes.find(n => n.id === e.toLoopNodeId)
+            if (toNode?.refType !== 'action') e = { ...e, condition: null }
+          }
+          // Migrate singular condition/effect → arrays
+          if (!Array.isArray(e.conditions) || !Array.isArray(e.effects)) {
+            const { condition, effect, ...rest } = e
+            return {
+              ...rest,
+              conditions: condition != null ? [{ id: newId(), ...condition }] : [],
+              effects: effect != null ? [{ id: newId(), ...effect }] : [],
+            }
+          }
+          return e
         })
 
       return { ...loop, edges }
@@ -320,7 +333,7 @@ export function addLoopEdge(s, loopId, fromLoopNodeId = '') {
     ...s,
     loops: s.loops.map(l =>
       l.id === loopId
-        ? { ...l, edges: [...l.edges, { id: newId(), fromLoopNodeId, toLoopNodeId: '', condition: null, effect: null }] }
+        ? { ...l, edges: [...l.edges, { id: newId(), fromLoopNodeId, toLoopNodeId: '', conditions: [], effects: [] }] }
         : l
     ),
   }

@@ -78,26 +78,25 @@ This is the format used when you Export or Import JSON from the tool. The docume
       "edges": [
         {
           "id": "edge-1",
-          "fromLoopNodeId": "node-2",
-          "toLoopNodeId": "node-5",
-          "condition": {
-            "objectId": "obj-1",
-            "attrId":   "attr-1",
-            "operator": ">=",
-            "value":    30
-          },
-          "effect": {
-            "targetObjectId": "obj-2",
-            "targetAttrId":   "attr-3",
-            "delta": -10
-          }
+          "fromLoopNodeId": "node-1",
+          "toLoopNodeId": "node-2",
+          "conditions": [
+            { "id": "cond-1", "objectId": "obj-1", "attrId": "attr-1", "operator": ">=", "value": 30 },
+            { "id": "cond-2", "objectId": "obj-2", "attrId": "attr-3", "operator": ">",  "value": 0  }
+          ],
+          "effects": [
+            { "id": "eff-1", "targetObjectId": "obj-2", "targetAttrId": "attr-3", "delta": -10 }
+          ]
         },
         {
           "id": "edge-2",
-          "fromLoopNodeId": "node-3",
-          "toLoopNodeId": "node-6",
-          "condition": null,
-          "effect": null
+          "fromLoopNodeId": "node-2",
+          "toLoopNodeId": "node-5",
+          "conditions": [],
+          "effects": [
+            { "id": "eff-2", "targetObjectId": "obj-1", "targetAttrId": "attr-1", "delta": -5  },
+            { "id": "eff-3", "targetObjectId": "obj-1", "targetAttrId": "attr-2", "delta": -10 }
+          ]
         }
       ]
     }
@@ -206,8 +205,8 @@ Each entry in `loops`.
 | `id`             | string           | yes      | Unique identifier. |
 | `fromLoopNodeId` | string           | yes      | `id` of the source loop-node. |
 | `toLoopNodeId`   | string           | yes      | `id` of the target loop-node. |
-| `condition`      | object \| null   | yes      | Guard condition; only applicable when the edge targets an Action node (`toLoopNodeId` refers to a node with `refType: "action"`). Must be `null` for edges targeting Object or Event nodes. |
-| `effect`         | object \| null   | yes      | Attribute mutation to apply; `null` means no effect. |
+| `conditions`     | array            | yes      | List of guard conditions (may be empty). Only applicable when the edge targets an Action node; must be `[]` for edges targeting Object or Event nodes. All conditions are combined with AND logic. |
+| `effects`        | array            | yes      | List of attribute mutations to apply (may be empty). All effects fire simultaneously when the edge is triggered. |
 
 #### Allowed connections
 
@@ -223,24 +222,30 @@ Not all source→target combinations are valid. The permitted connections depend
 
 ---
 
-#### Condition object
+#### Condition entry (`conditions` item)
 
-| Field      | Type   | Required | Description |
-|------------|--------|----------|-------------|
-| `objectId` | string | yes      | ID of the object whose attribute is checked. |
-| `attrId`   | string | yes      | ID of the attribute to compare. |
-| `operator` | string | yes      | Comparison operator. For `number` attributes: `<`, `<=`, `>`, `>=`, `=`, or `!=`. For `string` attributes: only `=` or `!=`. |
-| `value`    | number \| string | yes | The value to compare against. Matches the target attribute's type. |
+Each entry in the `conditions` array. All conditions on an edge are evaluated together with AND logic — every condition must hold for the edge to be considered active.
+
+| Field      | Type             | Required | Description |
+|------------|------------------|----------|-------------|
+| `id`       | string           | yes      | Unique identifier for this condition entry. |
+| `objectId` | string           | yes      | ID of the object whose attribute is checked. |
+| `attrId`   | string           | yes      | ID of the attribute to compare. |
+| `operator` | string           | yes      | Comparison operator. For `number` attributes: `<`, `<=`, `>`, `>=`, `=`, or `!=`. For `string` attributes: only `=` or `!=`. |
+| `value`    | number \| string | yes      | The value to compare against. Matches the target attribute's type. |
 
 ---
 
-#### Effect object
+#### Effect entry (`effects` item)
 
-| Field           | Type   | Required | Description |
-|-----------------|--------|----------|-------------|
-| `targetObjectId` | string | yes     | ID of the object whose attribute is mutated. |
-| `targetAttrId`   | string | yes     | ID of the attribute to change. |
-| `delta`          | number \| string | yes | For `number` attributes: numeric amount added (use negative to subtract). For `string` attributes: the new value to assign. |
+Each entry in the `effects` array. All effects on an edge are applied independently and simultaneously when the edge fires.
+
+| Field            | Type             | Required | Description |
+|------------------|------------------|----------|-------------|
+| `id`             | string           | yes      | Unique identifier for this effect entry. |
+| `targetObjectId` | string           | yes      | ID of the object whose attribute is mutated. |
+| `targetAttrId`   | string           | yes      | ID of the attribute to change. |
+| `delta`          | number \| string | yes      | For `number` attributes: numeric amount added (use negative to subtract). For `string` attributes: the new value to assign. |
 
 ---
 

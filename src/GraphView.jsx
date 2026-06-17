@@ -30,24 +30,28 @@ function nodeSize(label) {
 }
 
 function edgeLabel(edge, state) {
-  const effectPart = (() => {
-    if (!edge.effect?.targetObjectId) return ''
-    const obj = state.objects.find(o => o.id === edge.effect.targetObjectId)
-    const attr = obj?.attrs.find(a => a.id === edge.effect.targetAttrId)
-    if (!obj || !attr) return ''
-    return attr.type === 'string'
-      ? `[${obj.name}:${attr.name}] = "${edge.effect.delta}"`
-      : `[${obj.name}:${attr.name}] ${edge.effect.delta}`
-  })()
+  const effects = edge.effects || []
+  const conditions = edge.conditions || []
 
-  const condPart = (() => {
-    if (!edge.condition?.objectId) return ''
-    const obj = state.objects.find(o => o.id === edge.condition.objectId)
-    const attr = obj?.attrs.find(a => a.id === edge.condition.attrId)
-    return obj && attr
-      ? `if ${obj.name}:${attr.name} ${edge.condition.operator} ${edge.condition.value}`
-      : ''
-  })()
+  const effectParts = effects.flatMap(eff => {
+    if (!eff.targetObjectId) return []
+    const obj = state.objects.find(o => o.id === eff.targetObjectId)
+    const attr = obj?.attrs.find(a => a.id === eff.targetAttrId)
+    if (!obj || !attr) return []
+    return [attr.type === 'string'
+      ? `[${obj.name}:${attr.name}] = "${eff.delta}"`
+      : `[${obj.name}:${attr.name}] ${eff.delta}`]
+  })
+
+  const condParts = conditions.flatMap(cond => {
+    if (!cond.objectId) return []
+    const obj = state.objects.find(o => o.id === cond.objectId)
+    const attr = obj?.attrs.find(a => a.id === cond.attrId)
+    return obj && attr ? [`${obj.name}:${attr.name} ${cond.operator} ${cond.value}`] : []
+  })
+
+  const effectPart = effectParts.join(', ')
+  const condPart = condParts.length > 0 ? `if ${condParts.join(' AND ')}` : ''
 
   if (effectPart && condPart) return `${effectPart} | ${condPart}`
   return effectPart || condPart

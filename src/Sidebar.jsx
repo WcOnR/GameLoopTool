@@ -36,40 +36,41 @@ function disambiguateLabel(node, nodes, state, loop) {
   return `${text} (${idx + 1})`
 }
 
-// ── Effect fields ────────────────────────────────────────────────
-function EffectFields({ effect, state, onChange }) {
-  const setF = (field, val) => onChange({ ...(effect || {}), [field]: val })
-  const selectedObj = state.objects.find(o => o.id === effect?.targetObjectId)
-  const selectedAttr = selectedObj?.attrs.find(a => a.id === effect?.targetAttrId)
+// ── Effect row & editor ──────────────────────────────────────────
+function EffectRow({ effect, state, onChange, onDelete }) {
+  const setF = (field, val) => onChange({ ...effect, [field]: val })
+  const selectedObj = state.objects.find(o => o.id === effect.targetObjectId)
+  const selectedAttr = selectedObj?.attrs.find(a => a.id === effect.targetAttrId)
   const attrType = selectedAttr?.type ?? 'number'
   return (
     <div className="sub-fields">
       <div className="field-row">
         <span className="field-label">Obj</span>
-        <select className="inp flex1" value={effect?.targetObjectId || ''}
-          onChange={e => onChange(e.target.value ? { ...(effect || {}), targetObjectId: e.target.value, targetAttrId: '' } : null)}>
+        <select className="inp flex1" value={effect.targetObjectId || ''}
+          onChange={e => onChange({ ...effect, targetObjectId: e.target.value, targetAttrId: '' })}>
           <option value="">none</option>
           {state.objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
+        <button className="btn btn-icon-danger" onClick={onDelete}>✕</button>
       </div>
       {selectedObj && (
         <div className="field-row">
           <span className="field-label">Attr</span>
-          <select className="inp flex1" value={effect?.targetAttrId || ''}
+          <select className="inp flex1" value={effect.targetAttrId || ''}
             onChange={e => setF('targetAttrId', e.target.value)}>
             <option value="">-- attr --</option>
             {selectedObj.attrs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
       )}
-      {effect?.targetObjectId && (
+      {effect.targetObjectId && (
         <div className="field-row">
           <span className="field-label">{attrType === 'string' ? 'Value' : 'Delta'}</span>
           {attrType === 'string' ? (
-            <input className="inp small" type="text" value={effect?.delta ?? ''}
+            <input className="inp small" type="text" value={effect.delta ?? ''}
               onChange={e => setF('delta', e.target.value)} />
           ) : (
-            <input className="inp small" type="number" value={effect?.delta ?? ''}
+            <input className="inp small" type="number" value={effect.delta ?? ''}
               onChange={e => setF('delta', e.target.value === '' ? 0 : Number(e.target.value))} />
           )}
         </div>
@@ -78,32 +79,47 @@ function EffectFields({ effect, state, onChange }) {
   )
 }
 
-// ── Condition fields ─────────────────────────────────────────────
-function ConditionFields({ condition, state, onChange }) {
-  const selectedObj = state.objects.find(o => o.id === condition?.objectId)
-  const selectedAttr = selectedObj?.attrs.find(a => a.id === condition?.attrId)
+function EffectsEditor({ effects, state, onChange }) {
+  const addEffect = () => onChange([...effects, { id: S.newId(), targetObjectId: '', targetAttrId: '', delta: 0 }])
+  return (
+    <div>
+      {effects.map(eff => (
+        <EffectRow key={eff.id} effect={eff} state={state}
+          onChange={updated => onChange(effects.map(e => e.id === eff.id ? updated : e))}
+          onDelete={() => onChange(effects.filter(e => e.id !== eff.id))} />
+      ))}
+      <button className="btn btn-add" onClick={addEffect}>+ Add Effect</button>
+    </div>
+  )
+}
+
+// ── Condition row & editor ───────────────────────────────────────
+function ConditionRow({ condition, state, onChange, onDelete }) {
+  const selectedObj = state.objects.find(o => o.id === condition.objectId)
+  const selectedAttr = selectedObj?.attrs.find(a => a.id === condition.attrId)
   const attrType = selectedAttr?.type ?? 'number'
   const operators = attrType === 'string' ? STRING_OPERATORS : OPERATORS
   const setF = (field, val) => {
     const defaults = attrType === 'string' ? { operator: '=', value: '' } : { operator: '<', value: 0 }
-    onChange({ ...defaults, ...(condition || {}), [field]: val })
+    onChange({ ...defaults, ...condition, [field]: val })
   }
-  const currentOperator = operators.includes(condition?.operator) ? condition.operator : operators[0]
+  const currentOperator = operators.includes(condition.operator) ? condition.operator : operators[0]
   return (
     <div className="sub-fields">
       <div className="field-row">
         <span className="field-label">Obj</span>
-        <select className="inp flex1" value={condition?.objectId || ''}
-          onChange={e => onChange(e.target.value ? { ...(condition || { operator: '<', value: 0 }), objectId: e.target.value, attrId: '' } : null)}>
+        <select className="inp flex1" value={condition.objectId || ''}
+          onChange={e => onChange({ ...condition, objectId: e.target.value, attrId: '' })}>
           <option value="">none</option>
           {state.objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
+        <button className="btn btn-icon-danger" onClick={onDelete}>✕</button>
       </div>
       {selectedObj && (
         <>
           <div className="field-row">
             <span className="field-label">Attr</span>
-            <select className="inp flex1" value={condition?.attrId || ''}
+            <select className="inp flex1" value={condition.attrId || ''}
               onChange={e => setF('attrId', e.target.value)}>
               <option value="">-- attr --</option>
               {selectedObj.attrs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -116,15 +132,29 @@ function ConditionFields({ condition, state, onChange }) {
               {operators.map(op => <option key={op} value={op}>{op}</option>)}
             </select>
             {attrType === 'string' ? (
-              <input className="inp small" type="text" value={condition?.value ?? ''}
+              <input className="inp small" type="text" value={condition.value ?? ''}
                 onChange={e => setF('value', e.target.value)} />
             ) : (
-              <input className="inp small" type="number" value={condition?.value ?? 0}
+              <input className="inp small" type="number" value={condition.value ?? 0}
                 onChange={e => setF('value', Number(e.target.value))} />
             )}
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function ConditionsEditor({ conditions, state, onChange }) {
+  const addCondition = () => onChange([...conditions, { id: S.newId(), objectId: '', attrId: '', operator: '<', value: 0 }])
+  return (
+    <div>
+      {conditions.map(cond => (
+        <ConditionRow key={cond.id} condition={cond} state={state}
+          onChange={updated => onChange(conditions.map(c => c.id === cond.id ? updated : c))}
+          onDelete={() => onChange(conditions.filter(c => c.id !== cond.id))} />
+      ))}
+      <button className="btn btn-add" onClick={addCondition}>+ Add Condition</button>
     </div>
   )
 }
@@ -192,7 +222,7 @@ function NodeEdgeRow({ edge, loop, state, loopId, mutate }) {
           onChange={e => {
             const newToNode = loop.nodes.find(n => n.id === e.target.value)
             const patch = { toLoopNodeId: e.target.value }
-            if (newToNode?.refType !== 'action') patch.condition = null
+            if (newToNode?.refType !== 'action') patch.conditions = []
             mutate(S.updateLoopEdge, loopId, edge.id, patch)
           }}>
           <option value="">-- node --</option>
@@ -201,14 +231,14 @@ function NodeEdgeRow({ edge, loop, state, loopId, mutate }) {
           ))}
         </select>
       </div>
-      <div className="subsection-label">Effect</div>
-      <EffectFields effect={edge.effect} state={state}
-        onChange={eff => mutate(S.updateLoopEdge, loopId, edge.id, { effect: eff })} />
+      <div className="subsection-label">Effects</div>
+      <EffectsEditor effects={edge.effects || []} state={state}
+        onChange={effs => mutate(S.updateLoopEdge, loopId, edge.id, { effects: effs })} />
       {toIsAction && (
         <>
-          <div className="subsection-label">Condition</div>
-          <ConditionFields condition={edge.condition} state={state}
-            onChange={cond => mutate(S.updateLoopEdge, loopId, edge.id, { condition: cond })} />
+          <div className="subsection-label">Conditions</div>
+          <ConditionsEditor conditions={edge.conditions || []} state={state}
+            onChange={conds => mutate(S.updateLoopEdge, loopId, edge.id, { conditions: conds })} />
         </>
       )}
     </EdgeBlock>
