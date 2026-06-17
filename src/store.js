@@ -7,13 +7,53 @@ export function loadState() {
     const raw = localStorage.getItem(KEY)
     if (!raw) return EMPTY
     const saved = JSON.parse(raw)
-    return {
-      ...saved,
-      objects: (saved.objects || []).map(o => ({
-        ...o,
-        attrs: (o.attrs || []).map(a => a.type === 'object' ? { ...a, type: 'string' } : a),
-      })),
-    }
+    const objects = (saved.objects || []).map(o => ({
+      ...o,
+      attrs: (o.attrs || []).map(a => a.type === 'object' ? { ...a, type: 'string' } : a),
+    }))
+    const loops = (saved.loops || []).map(loop => {
+      const nodes = loop.nodes || []
+      const localActions = loop.localActions || []
+
+      const isValid = edge => {
+        const from = nodes.find(n => n.id === edge.fromLoopNodeId)
+        const to = nodes.find(n => n.id === edge.toLoopNodeId)
+        if (!from || !to) return false
+        if (from.refType === 'object') {
+          if (to.refType !== 'action') return false
+          const srcObj = objects.find(o => o.id === from.refId)
+          const gIds = new Set((srcObj?.actions || []).map(a => a.id))
+          const lIds = new Set(localActions.filter(a => a.objectId === from.refId).map(a => a.id))
+          return gIds.has(to.refId) || lIds.has(to.refId)
+        }
+        if (from.refType === 'action') {
+          if (to.refType === 'event') return true
+          if (to.refType === 'object') {
+            let objId = null
+            for (const obj of objects) {
+              if ((obj.actions || []).some(a => a.id === from.refId)) { objId = obj.id; break }
+            }
+            if (!objId) objId = localActions.find(a => a.id === from.refId)?.objectId ?? null
+            return to.refId === objId
+          }
+          return false
+        }
+        if (from.refType === 'event') return to.refType === 'object' || to.refType === 'event'
+        return false
+      }
+
+      const edges = (loop.edges || [])
+        .filter(e => e.fromLoopNodeId !== e.toLoopNodeId)
+        .filter(isValid)
+        .map(edge => {
+          if (edge.condition === null) return edge
+          const toNode = nodes.find(n => n.id === edge.toLoopNodeId)
+          return toNode?.refType !== 'action' ? { ...edge, condition: null } : edge
+        })
+
+      return { ...loop, edges }
+    })
+    return { ...saved, objects, loops }
   } catch {
     return EMPTY
   }

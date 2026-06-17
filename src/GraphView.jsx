@@ -56,9 +56,7 @@ function edgeLabel(edge, state) {
 function getNodeLabel(node, state, loop) {
   if (node.refType === 'object') {
     const obj = state.objects.find(o => o.id === node.refId)
-    if (!obj) return '?'
-    const attrLines = obj.attrs.map(a => `${a.name}: ${a.value}`).join('\n')
-    return obj.name + (attrLines ? '\n' + attrLines : '')
+    return obj?.name ?? '?'
   }
   if (node.refType === 'action') {
     for (const obj of state.objects) {

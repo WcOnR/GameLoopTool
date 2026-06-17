@@ -129,6 +129,38 @@ function ConditionFields({ condition, state, onChange }) {
   )
 }
 
+// ── Valid targets for an edge's source node ──────────────────────
+function validTargets(fromNode, loop, state) {
+  if (!fromNode) return loop.nodes
+  const localActions = loop.localActions || []
+
+  const notSelf = n => n.id !== fromNode.id
+
+  if (fromNode.refType === 'object') {
+    const srcObj = state.objects.find(o => o.id === fromNode.refId)
+    const gIds = new Set((srcObj?.actions || []).map(a => a.id))
+    const lIds = new Set(localActions.filter(a => a.objectId === fromNode.refId).map(a => a.id))
+    return loop.nodes.filter(n => notSelf(n) && n.refType === 'action' && (gIds.has(n.refId) || lIds.has(n.refId)))
+  }
+
+  if (fromNode.refType === 'action') {
+    let actionObjId = null
+    for (const obj of state.objects) {
+      if ((obj.actions || []).some(a => a.id === fromNode.refId)) { actionObjId = obj.id; break }
+    }
+    if (!actionObjId) actionObjId = localActions.find(a => a.id === fromNode.refId)?.objectId ?? null
+    return loop.nodes.filter(n =>
+      notSelf(n) && (n.refType === 'event' || (n.refType === 'object' && n.refId === actionObjId))
+    )
+  }
+
+  if (fromNode.refType === 'event') {
+    return loop.nodes.filter(n => notSelf(n) && (n.refType === 'object' || n.refType === 'event'))
+  }
+
+  return loop.nodes.filter(notSelf)
+}
+
 // ── Edge block (collapsible) ─────────────────────────────────────
 function EdgeBlock({ label, onDelete, children }) {
   const [open, setOpen] = useState(true)
@@ -146,17 +178,25 @@ function EdgeBlock({ label, onDelete, children }) {
 
 // ── Node edge row (outgoing edge, source node is implicit) ───────
 function NodeEdgeRow({ edge, loop, state, loopId, mutate }) {
+  const fromNode = loop.nodes.find(n => n.id === edge.fromLoopNodeId)
   const toNode = loop.nodes.find(n => n.id === edge.toLoopNodeId)
   const toLabel = toNode ? disambiguateLabel(toNode, loop.nodes, state, loop) : '?'
+  const toIsAction = toNode?.refType === 'action'
+  const targets = validTargets(fromNode, loop, state)
 
   return (
     <EdgeBlock label={`→ ${toLabel}`} onDelete={() => mutate(S.deleteLoopEdge, loopId, edge.id)}>
       <div className="field-row">
         <span className="field-label">To</span>
         <select className="inp flex1" value={edge.toLoopNodeId || ''}
-          onChange={e => mutate(S.updateLoopEdge, loopId, edge.id, { toLoopNodeId: e.target.value })}>
+          onChange={e => {
+            const newToNode = loop.nodes.find(n => n.id === e.target.value)
+            const patch = { toLoopNodeId: e.target.value }
+            if (newToNode?.refType !== 'action') patch.condition = null
+            mutate(S.updateLoopEdge, loopId, edge.id, patch)
+          }}>
           <option value="">-- node --</option>
-          {loop.nodes.map(n => (
+          {targets.map(n => (
             <option key={n.id} value={n.id}>{disambiguateLabel(n, loop.nodes, state, loop)}</option>
           ))}
         </select>
@@ -164,9 +204,13 @@ function NodeEdgeRow({ edge, loop, state, loopId, mutate }) {
       <div className="subsection-label">Effect</div>
       <EffectFields effect={edge.effect} state={state}
         onChange={eff => mutate(S.updateLoopEdge, loopId, edge.id, { effect: eff })} />
-      <div className="subsection-label">Condition</div>
-      <ConditionFields condition={edge.condition} state={state}
-        onChange={cond => mutate(S.updateLoopEdge, loopId, edge.id, { condition: cond })} />
+      {toIsAction && (
+        <>
+          <div className="subsection-label">Condition</div>
+          <ConditionFields condition={edge.condition} state={state}
+            onChange={cond => mutate(S.updateLoopEdge, loopId, edge.id, { condition: cond })} />
+        </>
+      )}
     </EdgeBlock>
   )
 }

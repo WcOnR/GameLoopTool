@@ -206,8 +206,20 @@ Each entry in `loops`.
 | `id`             | string           | yes      | Unique identifier. |
 | `fromLoopNodeId` | string           | yes      | `id` of the source loop-node. |
 | `toLoopNodeId`   | string           | yes      | `id` of the target loop-node. |
-| `condition`      | object \| null   | yes      | Guard condition; `null` means unconditional. |
+| `condition`      | object \| null   | yes      | Guard condition; only applicable when the edge targets an Action node (`toLoopNodeId` refers to a node with `refType: "action"`). Must be `null` for edges targeting Object or Event nodes. |
 | `effect`         | object \| null   | yes      | Attribute mutation to apply; `null` means no effect. |
+
+#### Allowed connections
+
+Not all source→target combinations are valid. The permitted connections depend on the source node's type:
+
+| Source type | Allowed target types |
+|-------------|----------------------|
+| **Object** | Action nodes that belong to that same object (global or local actions whose `objectId` matches the source object). |
+| **Action** | Object nodes that own this action, or any Event node in the loop. |
+| **Event** | Any Object node, or any other Event node in the loop. |
+
+> **Condition scoping:** Conditions gate whether an action can be taken, so they only make sense on edges that lead into an Action node. Edges leading into Object or Event nodes are always unconditional and may only carry an optional Effect.
 
 ---
 
