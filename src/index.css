@@ -267,8 +267,11 @@ select.inp { cursor: pointer; padding: 1px 3px; }
   background: #141428;
   z-index: 1;
 }
-.loop-tabs-bar::-webkit-scrollbar { height: 3px; }
-.loop-tabs-bar::-webkit-scrollbar-thumb { background: #2a3a5e; border-radius: 2px; }
+.loop-tabs-bar { scrollbar-width: thin; scrollbar-color: #3d5280 #141428; }
+.loop-tabs-bar::-webkit-scrollbar { height: 10px; }
+.loop-tabs-bar::-webkit-scrollbar-track { background: #141428; }
+.loop-tabs-bar::-webkit-scrollbar-thumb { background: #3d5280; border-radius: 5px; }
+.loop-tabs-bar::-webkit-scrollbar-thumb:hover { background: #5470a8; }
 
 .loop-tab-btn {
   display: flex;
