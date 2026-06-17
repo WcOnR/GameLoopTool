@@ -6,6 +6,13 @@ A visual editor for game mechanics schemas. Build Objects, Attributes, Actions, 
 
 https://wconr.github.io/GameLoopTool/
 
+## Features
+
+- Build Objects with typed Attributes and Actions
+- Compose game loops visually as directed graphs
+- Export / Import schemas as JSON
+- Click the 📷 camera icon in the bottom-right of the graph to export the current loop as a transparent PNG image
+
 ## Run locally
 
 ```bash

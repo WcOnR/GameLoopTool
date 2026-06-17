@@ -223,6 +223,20 @@ export default function GraphView({ state, selectedLoopId, selectedId, onSelectL
   const loop = state.loops.find(l => l.id === selectedLoopId)
   const isEmpty = !loop || loop.nodes.length === 0
 
+  const handleSavePng = () => {
+    const cy = cyRef.current
+    if (!cy) return
+    const loopName = loop?.name ?? 'loop'
+    const filename = loopName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '') + '.png'
+    const blob = cy.png({ output: 'blob', bg: null, full: true, scale: 1 })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="graph-panel">
       <div id="cy" ref={containerRef} />
@@ -230,6 +244,11 @@ export default function GraphView({ state, selectedLoopId, selectedId, onSelectL
         <div className="graph-placeholder">
           {state.loops.length === 0 ? 'Create a loop to get started' : 'Add nodes to this loop'}
         </div>
+      )}
+      {!isEmpty && (
+        <button className="graph-save-png-btn" onClick={handleSavePng} title="Export as PNG">
+          📷
+        </button>
       )}
     </div>
   )
